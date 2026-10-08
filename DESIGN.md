@@ -24,6 +24,12 @@
 
 人不做查询界面，人永远通过 agent 查询。
 
+### 部署与资源命名
+
+- 部署步骤、secrets 清单、token 轮换与排障：见 [`docs/deploy.md`](docs/deploy.md)（含 Windows 上只能用 `go install` 装 Turso CLI 的说明）。
+- 资源命名：Cloudflare Worker 为 `liushui-mem-{dev,prod}`；Turso 每个库一个独立 DB，名为 `liushui-{personal,work}-{dev,prod}`；client token 与库的绑定放在 Worker secret `LIUSHUI_VAULT_TOKENS`（不进仓库）。
+- Worker 名里的 `mem` 是 memory 的缩写，**不是命令名**（命令叫 `liushui`）。不为表面一致改成 `liushui-{dev,prod}`：那要新建 Worker、旧 Worker 成为孤儿资源、`workers.dev` URL 变更，还要同步 CLI 配置里的 url、`docs/deploy.md` 与集成测试；收益只是名字好看。若将来真要做，应当是一个只做重命名 + 一次迁移的独立 change。
+
 ## 记忆的数据模型
 
 （总体设计，包含尚未实现的部分；已实现的行为契约以 `openspec/specs/` 下的主 spec 为准。）
