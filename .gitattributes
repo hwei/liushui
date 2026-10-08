@@ -1,0 +1,4 @@
+# Normalize all text files to LF in the repository and in the working tree.
+# This keeps the repo consistent regardless of the local core.autocrlf setting
+# and silences the "LF will be replaced by CRLF" warnings on add.
+* text=auto eol=lf
