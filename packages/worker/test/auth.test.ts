@@ -75,7 +75,7 @@ describe('token 鉴权（task 4.1）', () => {
   });
 
   it('findVaultForToken 扫描全部条目且只命中绑定项', async () => {
-    const entries = parseVaultTokens(ctx.env.MEM_VAULT_TOKENS);
+    const entries = parseVaultTokens(ctx.env.LIUSHUI_VAULT_TOKENS);
     expect(await findVaultForToken(entries, PERSONAL_TOKEN)).toMatchObject({ vault: 'personal' });
     expect(await findVaultForToken(entries, WORK_TOKEN)).toMatchObject({ vault: 'work' });
     expect(await findVaultForToken(entries, 'personal')).toBeNull();
@@ -90,7 +90,7 @@ describe('token 鉴权（task 4.1）', () => {
 
     const overlapEnv = {
       SERVICE_VERSION: '0.1.0-test',
-      MEM_VAULT_TOKENS: JSON.stringify({ [oldToken]: shared, [newToken]: shared }),
+      LIUSHUI_VAULT_TOKENS: JSON.stringify({ [oldToken]: shared, [newToken]: shared }),
     };
 
     const viaOld = await callAppend(ctx, await makeAppendBody(), oldToken, ctx.deps, overlapEnv);
@@ -107,7 +107,7 @@ describe('token 鉴权（task 4.1）', () => {
 
     const afterRotationEnv = {
       SERVICE_VERSION: '0.1.0-test',
-      MEM_VAULT_TOKENS: JSON.stringify({ [newToken]: shared }),
+      LIUSHUI_VAULT_TOKENS: JSON.stringify({ [newToken]: shared }),
     };
     const oldTokenAfter = await callAppend(
       ctx,

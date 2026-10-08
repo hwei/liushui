@@ -5,7 +5,7 @@
   "type": "module",
   "description": "记忆流水账命令行入口 mem",
   "bin": {
-    "mem": "./bin/mem.ts"
+    "liushui": "./bin/liushui.ts"
   },
   "exports": {
     ".": "./src/index.ts"

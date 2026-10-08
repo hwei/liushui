@@ -28,7 +28,7 @@ const MULTI_CONFIG = {
   },
 };
 
-describe('mem append（task 5.5）', () => {
+describe('liushui append（task 5.5）', () => {
   const fakeGit = (args: readonly string[]): string | null => {
     const key = args.join(' ');
     if (key === 'rev-parse --show-toplevel') return '/repo';
@@ -46,7 +46,7 @@ describe('mem append（task 5.5）', () => {
         jsonResponse({ id: call.body['id'], created: true }, 201),
       );
       const io = createIo({
-        env: { MEM_CONFIG: file.path, MEM_AUTHOR: 'will', USER: 'ignored' },
+        env: { LIUSHUI_CONFIG: file.path, LIUSHUI_AUTHOR: 'will', USER: 'ignored' },
         cwd: '/repo',
         fetchImpl: stub.fetchImpl,
         now: () => new Date('2026-10-08T07:47:08.479Z'),
@@ -76,13 +76,13 @@ describe('mem append（task 5.5）', () => {
     const file = writeTempConfig(CONFIG);
     try {
       const stub = createFetchStub(() => jsonResponse({ id: 'x', created: true }));
-      const io = createIo({ env: { MEM_CONFIG: file.path }, fetchImpl: stub.fetchImpl });
+      const io = createIo({ env: { LIUSHUI_CONFIG: file.path }, fetchImpl: stub.fetchImpl });
 
       expect(await main(['append', ''], io)).not.toBe(0);
       expect(io.stderrText()).toContain('内容不能为空');
       expect(stub.calls).toHaveLength(0);
 
-      const io2 = createIo({ env: { MEM_CONFIG: file.path }, fetchImpl: stub.fetchImpl });
+      const io2 = createIo({ env: { LIUSHUI_CONFIG: file.path }, fetchImpl: stub.fetchImpl });
       expect(await main(['append', '   '], io2)).not.toBe(0);
       expect(stub.calls).toHaveLength(0);
     } finally {
@@ -97,7 +97,7 @@ describe('mem append（task 5.5）', () => {
         jsonResponse({ id: call.body['id'], created: true }, 201),
       );
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: stub.fetchImpl,
         now: () => new Date('2026-10-08T07:47:08.479Z'),
       });
@@ -117,7 +117,7 @@ describe('mem append（task 5.5）', () => {
         jsonResponse({ id: call.body['id'], created: true }, 201),
       );
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         cwd: '/repo',
         fetchImpl: stub.fetchImpl,
         now: () => new Date('2026-10-08T07:47:08.479Z'),
@@ -161,7 +161,7 @@ describe('mem append（task 5.5）', () => {
         jsonResponse({ id: call.body['id'], created: false }, 200),
       );
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: stub.fetchImpl,
         now: () => new Date('2026-10-08T07:47:08.479Z'),
       });
@@ -179,10 +179,10 @@ describe('mem append（task 5.5）', () => {
 
     const help = createIo({});
     expect(await main(['--help'], help)).toBe(0);
-    expect(help.stdoutText()).toContain('mem append');
+    expect(help.stdoutText()).toContain('liushui append');
   });
 
-  it('非 git 目录追加仍成功，且 meta 不含任何 git.*（mem-cli: 不在 git 仓库内追加）', async () => {
+  it('非 git 目录追加仍成功，且 meta 不含任何 git.*（memory-cli: 不在 git 仓库内追加）', async () => {
     const file = writeTempConfig(CONFIG);
     const dir = makeTempDir();
     try {
@@ -190,7 +190,7 @@ describe('mem append（task 5.5）', () => {
         jsonResponse({ id: call.body['id'], created: true }, 201),
       );
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         cwd: dir.dir,
         fetchImpl: stub.fetchImpl,
         now: () => new Date('2026-10-08T07:47:08.479Z'),
@@ -217,7 +217,7 @@ describe('mem append（task 5.5）', () => {
 
     const file = writeTempConfig(CONFIG);
     try {
-      const io2 = createIo({ env: { MEM_CONFIG: file.path } });
+      const io2 = createIo({ env: { LIUSHUI_CONFIG: file.path } });
       expect(await main(['append', '--nope', 'x'], io2)).toBe(2);
       expect(io2.stderrText()).toContain('未知选项');
     } finally {

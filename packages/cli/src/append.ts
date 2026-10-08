@@ -1,5 +1,5 @@
 /**
- * `mem append` 的核心逻辑（与进程/终端解耦，便于测试）。
+ * `liushui append` 的核心逻辑（与进程/终端解耦，便于测试）。
  *
  * 一次命令只生成一份核心字段（`ts`、`id`），因此：
  * - 发往多个库时 id 相同；
@@ -54,9 +54,9 @@ export interface AppendCommandResult {
   reports: VaultReport[];
 }
 
-/** 记忆作者：优先 MEM_AUTHOR，其次系统用户名。 */
+/** 记忆作者：优先 LIUSHUI_AUTHOR，其次系统用户名。 */
 export function resolveAuthor(env: Record<string, string | undefined>): string {
-  return env['MEM_AUTHOR'] ?? env['USER'] ?? env['USERNAME'] ?? 'unknown';
+  return env['LIUSHUI_AUTHOR'] ?? env['USER'] ?? env['USERNAME'] ?? 'unknown';
 }
 
 function toReport(vault: ResolvedVault, outcome: AppendOutcome): VaultReport {

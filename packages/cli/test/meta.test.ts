@@ -80,7 +80,7 @@ describe('meta 自动采集（task 5.2）', () => {
   it('能识别 agent 名称与会话', () => {
     const explicit = collectMeta({
       cwd: '/tmp/x',
-      env: { MEM_AGENT_NAME: 'pi', MEM_AGENT_SESSION: 's-42' },
+      env: { LIUSHUI_AGENT_NAME: 'pi', LIUSHUI_AGENT_SESSION: 's-42' },
       runGit: () => null,
     });
     expect(explicit['agent']).toEqual({ name: 'pi', session: 's-42' });

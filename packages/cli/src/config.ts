@@ -1,7 +1,7 @@
 /**
  * 本地配置：各库的服务地址与 token、默认库、dev/prod 环境选择，以及按库的 meta 脱敏。
  *
- * 配置文件默认位于 `~/.config/mem/config.json`，可用 `MEM_CONFIG` 或 `--config` 覆盖。
+ * 配置文件默认位于 `~/.config/liushui/config.json`，可用 `LIUSHUI_CONFIG` 或 `--config` 覆盖。
  * token 只从配置读取，不出现在任何输出与日志中。
  */
 
@@ -48,19 +48,19 @@ export interface ResolvedConfig {
 }
 
 export interface LoadConfigOptions {
-  /** 配置文件路径；默认 `MEM_CONFIG` 或 `~/.config/mem/config.json`。 */
+  /** 配置文件路径；默认 `LIUSHUI_CONFIG` 或 `~/.config/liushui/config.json`。 */
   configPath?: string;
-  /** 环境名；默认 `MEM_ENV`、配置文件里的 env、再退回 "dev"。 */
+  /** 环境名；默认 `LIUSHUI_ENV`、配置文件里的 env、再退回 "dev"。 */
   env?: string;
   /** 目标库名；省略时用默认库。 */
   vaultNames?: readonly string[];
-  /** 用于读取 MEM_CONFIG / MEM_ENV。 */
+  /** 用于读取 LIUSHUI_CONFIG / LIUSHUI_ENV。 */
   envVars?: Record<string, string | undefined>;
 }
 
 /** 默认配置文件路径。 */
 export function defaultConfigPath(home: string = homedir()): string {
-  return join(home, '.config', 'mem', 'config.json');
+  return join(home, '.config', 'liushui', 'config.json');
 }
 
 /**
@@ -68,7 +68,7 @@ export function defaultConfigPath(home: string = homedir()): string {
  * 配置不存在或损坏时返回空数组，不抛错：真正的错误由 loadConfig 报出。
  */
 export function readConfiguredTokens(configPath?: string): string[] {
-  const path = configPath ?? process.env['MEM_CONFIG'] ?? defaultConfigPath();
+  const path = configPath ?? process.env['LIUSHUI_CONFIG'] ?? defaultConfigPath();
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
     if (!isRecord(parsed) || !isRecord(parsed['environments'])) return [];
@@ -158,7 +158,7 @@ export function parseConfig(raw: string): CliConfigFile {
  */
 export function loadConfig(options: LoadConfigOptions = {}): ResolvedConfig {
   const vars = options.envVars ?? {};
-  const path = options.configPath ?? vars['MEM_CONFIG'] ?? defaultConfigPath();
+  const path = options.configPath ?? vars['LIUSHUI_CONFIG'] ?? defaultConfigPath();
 
   let raw: string;
   try {
@@ -167,7 +167,7 @@ export function loadConfig(options: LoadConfigOptions = {}): ResolvedConfig {
     throw new CliError(
       [
         `未找到配置文件：${path}`,
-        '请创建该文件，或设置 MEM_CONFIG 指向配置文件。格式示例：',
+        '请创建该文件，或设置 LIUSHUI_CONFIG 指向配置文件。格式示例：',
         JSON.stringify(
           {
             env: 'dev',
@@ -188,7 +188,7 @@ export function loadConfig(options: LoadConfigOptions = {}): ResolvedConfig {
   }
 
   const config = parseConfig(raw);
-  const env = options.env ?? vars['MEM_ENV'] ?? config.env ?? 'dev';
+  const env = options.env ?? vars['LIUSHUI_ENV'] ?? config.env ?? 'dev';
   const environment = config.environments[env];
   if (!environment) {
     const known = Object.keys(config.environments).join(', ');

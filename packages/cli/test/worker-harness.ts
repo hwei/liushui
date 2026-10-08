@@ -48,7 +48,7 @@ export async function startLocalWorker(): Promise<LocalWorker> {
   const token = 'local-test-token';
   const env: Env = {
     SERVICE_VERSION: '0.1.0-local',
-    MEM_VAULT_TOKENS: JSON.stringify({
+    LIUSHUI_VAULT_TOKENS: JSON.stringify({
       [token]: { vault: 'personal', url: dbUrl, authToken: '' },
     }),
   };

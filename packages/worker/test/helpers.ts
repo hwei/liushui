@@ -91,7 +91,7 @@ export async function createTestContext(): Promise<TestContext> {
 
   const env: Env = {
     SERVICE_VERSION: '0.1.0-test',
-    MEM_VAULT_TOKENS: JSON.stringify(tokens),
+    LIUSHUI_VAULT_TOKENS: JSON.stringify(tokens),
   };
 
   return {

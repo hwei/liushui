@@ -5,7 +5,7 @@
 当前仓库实现的是最小可用内核 `core-append-store`：
 
 ```
-mem append  →  Cloudflare Worker（token 鉴权）  →  Turso / libSQL（每库一个独立数据库）
+liushui append  →  Cloudflare Worker（token 鉴权）  →  Turso / libSQL（每库一个独立数据库）
 ```
 
 本 change 只覆盖**文本的写入路径**。查询、FTS、向量、附件、提交页、反馈与维护流程都不在范围内。
@@ -84,7 +84,7 @@ curl http://127.0.0.1:8787/health
 ### 4. 配置并运行 CLI
 
 ```bash
-export MEM_CONFIG="$PWD/.turso-cli/config.json"   # 也可用默认路径 ~/.config/mem/config.json
+export LIUSHUI_CONFIG="$PWD/.turso-cli/config.json"   # 也可用默认路径 ~/.config/liushui/config.json
 ```
 
 配置文件格式：
@@ -110,17 +110,17 @@ export MEM_CONFIG="$PWD/.turso-cli/config.json"   # 也可用默认路径 ~/.con
 ```
 
 ```bash
-node packages/cli/bin/mem.ts append "修复了 iOS 渲染问题"
+node packages/cli/bin/liushui.ts append "修复了 iOS 渲染问题"
 # → EXW22UONNOLRSUJWO3EIA7KE2I        （单库：stdout 只有 id）
 
-node packages/cli/bin/mem.ts append --vault personal,work --kind note "同时写入两个库"
+node packages/cli/bin/liushui.ts append --vault personal,work --kind note "同时写入两个库"
 # → {"vault":"personal","ok":true,"id":"…","created":true}
 #   {"vault":"work","ok":true,"id":"…","created":true}
 ```
 
-也可以直接 `npx mem …`（workspace bin 已链接）。
+也可以直接 `npx liushui …`（workspace bin 已链接）。
 
-**输出约定**：单库成功时 stdout 只有 `id`（便于 agent 解析）；多库时 stdout 是 JSONL，每库一行；失败写到 stderr，任何库失败退出码为 1；用法/配置错误退出码为 2。`--env dev|prod` 或 `MEM_ENV` 切换环境，配置文件里的 `env` 是默认值。
+**输出约定**：单库成功时 stdout 只有 `id`（便于 agent 解析）；多库时 stdout 是 JSONL，每库一行；失败写到 stderr，任何库失败退出码为 1；用法/配置错误退出码为 2。`--env dev|prod` 或 `LIUSHUI_ENV` 切换环境，配置文件里的 `env` 是默认值。
 
 ## 环境与 secrets 清单
 
@@ -133,9 +133,9 @@ node packages/cli/bin/mem.ts append --vault personal,work --kind note "同时写
 
 | 名称 | 必填 | 说明 |
 |---|---|---|
-| `MEM_VAULT_TOKENS` | 是 | JSON：`{ "<token>": { "vault": "personal", "url": "libsql://…", "authToken": "<Turso 凭据>" } }`，token 与库一一绑定 |
-| `MEM_MAX_CONTENT_BYTES` | 否 | `content` 上限（UTF-8 字节），默认 131072 |
-| `MEM_SCHEMA_V` | 否 | 覆盖写入的 `schema_v`，默认取 `@liushui/core` 的 `SCHEMA_VERSION` |
+| `LIUSHUI_VAULT_TOKENS` | 是 | JSON：`{ "<token>": { "vault": "personal", "url": "libsql://…", "authToken": "<Turso 凭据>" } }`，token 与库一一绑定 |
+| `LIUSHUI_MAX_CONTENT_BYTES` | 否 | `content` 上限（UTF-8 字节），默认 131072 |
+| `LIUSHUI_SCHEMA_V` | 否 | 覆盖写入的 `schema_v`，默认取 `@liushui/core` 的 `SCHEMA_VERSION` |
 
 **Worker 侧普通变量**：`SERVICE_VERSION`（`GET /health` 返回，用于确认部署版本）。
 
@@ -161,7 +161,7 @@ node packages/cli/bin/mem.ts append --vault personal,work --kind note "同时写
 
 ## 常见问题
 
-**`mem append` 报「网络错误：TimeoutError」但 curl 同一个地址正常**
+**`liushui append` 报「网络错误：TimeoutError」但 curl 同一个地址正常**
 你的机器出网要走代理。Node 的 `fetch` 默认不读 `HTTP_PROXY` / `HTTPS_PROXY`（curl 会读）：
 
 ```bash

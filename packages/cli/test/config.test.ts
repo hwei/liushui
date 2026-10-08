@@ -35,9 +35,9 @@ const SAMPLE = {
 };
 
 describe('配置（task 5.1）', () => {
-  it('默认路径在 ~/.config/mem/config.json', () => {
+  it('默认路径在 ~/.config/liushui/config.json', () => {
     expect(defaultConfigPath(join('/home/me'))).toBe(
-      join('/home/me', '.config', 'mem', 'config.json'),
+      join('/home/me', '.config', 'liushui', 'config.json'),
     );
   });
 
@@ -76,17 +76,17 @@ describe('配置（task 5.1）', () => {
         'https://mem.example.com',
       );
       expect(
-        loadConfig({ configPath: file.path, envVars: { MEM_ENV: 'prod' } }).vaults[0]?.token,
+        loadConfig({ configPath: file.path, envVars: { LIUSHUI_ENV: 'prod' } }).vaults[0]?.token,
       ).toBe('prod-personal-token');
     } finally {
       file.remove();
     }
   });
 
-  it('MEM_CONFIG 可指定配置文件', () => {
+  it('LIUSHUI_CONFIG 可指定配置文件', () => {
     const file = writeTempConfig(SAMPLE);
     try {
-      const config = loadConfig({ envVars: { MEM_CONFIG: file.path } });
+      const config = loadConfig({ envVars: { LIUSHUI_CONFIG: file.path } });
       expect(config.path).toBe(file.path);
     } finally {
       file.remove();
@@ -96,7 +96,7 @@ describe('配置（task 5.1）', () => {
   it('未配置时报错并给出配置指引，且不发出请求', async () => {
     const stub = createFetchStub(() => jsonResponse({ id: 'x', created: true }));
     const io = createIo({
-      env: { MEM_CONFIG: '/definitely/not/here/config.json' },
+      env: { LIUSHUI_CONFIG: '/definitely/not/here/config.json' },
       fetchImpl: stub.fetchImpl,
     });
     const code = await main(['append', '内容'], io);
@@ -170,7 +170,7 @@ describe('配置（task 5.1）', () => {
         () => new Response('token dev-personal-token leaked', { status: 500 }),
       );
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: stub.fetchImpl,
         maxAttempts: 1,
         sleep: async () => undefined,
@@ -187,7 +187,7 @@ describe('配置（task 5.1）', () => {
 
   it('未配置库时不发出请求（没有配置文件）', async () => {
     const stub = createFetchStub(() => jsonResponse({ id: 'x', created: true }));
-    const io = createIo({ env: { MEM_CONFIG: '/nope/config.json' }, fetchImpl: stub.fetchImpl });
+    const io = createIo({ env: { LIUSHUI_CONFIG: '/nope/config.json' }, fetchImpl: stub.fetchImpl });
     await main(['append', '内容'], io);
     expect(stub.calls).toHaveLength(0);
   });

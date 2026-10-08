@@ -82,7 +82,7 @@ describe('错误语义（task 4.3）', () => {
   });
 
   it('配置损坏返回服务端错误且不泄漏配置内容', async () => {
-    const env = { ...ctx.env, MEM_VAULT_TOKENS: '{ broken json with secret-token' };
+    const env = { ...ctx.env, LIUSHUI_VAULT_TOKENS: '{ broken json with secret-token' };
     const body = await makeAppendBody();
     const response = await handleRequest(appendRequest(body, PERSONAL_TOKEN), env, ctx.deps);
     expect(response.status).toBe(500);
@@ -92,7 +92,7 @@ describe('错误语义（task 4.3）', () => {
   });
 
   it('未配置任何库时也是服务端错误', async () => {
-    const env = { ...ctx.env, MEM_VAULT_TOKENS: '' };
+    const env = { ...ctx.env, LIUSHUI_VAULT_TOKENS: '' };
     const body = await makeAppendBody();
     const response = await handleRequest(appendRequest(body, PERSONAL_TOKEN), env, ctx.deps);
     expect(response.status).toBe(500);

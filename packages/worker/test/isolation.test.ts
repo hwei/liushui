@@ -101,7 +101,7 @@ describe('按库路由与隔离（task 4.5）', () => {
   it('环境隔离：dev token 无法访问 prod，prod 数据不变（memory-api: dev token 不能访问 prod）', async () => {
     const prodEnv = {
       SERVICE_VERSION: '1.0.0-prod',
-      MEM_VAULT_TOKENS: JSON.stringify({
+      LIUSHUI_VAULT_TOKENS: JSON.stringify({
         'prod-personal-token': { vault: 'prod-personal', url: ctx.vaults['personal']!.url, authToken: '' },
       }),
     };

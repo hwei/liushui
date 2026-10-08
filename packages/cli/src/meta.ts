@@ -55,8 +55,8 @@ function firstDefined(
 function detectAgent(
   env: Record<string, string | undefined>,
 ): { name?: string; session?: string } {
-  const explicitName = firstDefined(env, ['MEM_AGENT_NAME', 'MEM_AGENT']);
-  const explicitSession = firstDefined(env, ['MEM_AGENT_SESSION', 'MEM_SESSION']);
+  const explicitName = firstDefined(env, ['LIUSHUI_AGENT_NAME', 'LIUSHUI_AGENT']);
+  const explicitSession = firstDefined(env, ['LIUSHUI_AGENT_SESSION', 'LIUSHUI_SESSION']);
 
   let name = explicitName;
   if (!name) {
@@ -136,7 +136,7 @@ export function collectMeta(options: CollectMetaOptions): Meta {
     // 采集不到时省略。
   }
 
-  const src = firstDefined(env, ['MEM_SRC']);
+  const src = firstDefined(env, ['LIUSHUI_SRC']);
   meta['src'] = src ?? 'cli';
 
   return meta;

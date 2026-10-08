@@ -31,7 +31,7 @@ describe('可靠重试与多库报告（task 5.6）', () => {
     try {
       worker.failNextRequests(1);
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: fetch,
         baseDelayMs: 1,
       });
@@ -59,7 +59,7 @@ describe('可靠重试与多库报告（task 5.6）', () => {
       };
 
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: flaky,
         baseDelayMs: 1,
       });
@@ -78,7 +78,7 @@ describe('可靠重试与多库报告（task 5.6）', () => {
     const file = writeTempConfig(configFor(worker.url, 'wrong-token'));
     try {
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: fetch,
         baseDelayMs: 1,
       });
@@ -98,7 +98,7 @@ describe('可靠重试与多库报告（task 5.6）', () => {
     const file = writeTempConfig(configFor(worker.url, worker.token));
     try {
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: async () => new Response(JSON.stringify({ error: { code: 'bad' } }), { status: 400 }),
         baseDelayMs: 1,
       });
@@ -115,7 +115,7 @@ describe('可靠重试与多库报告（task 5.6）', () => {
     try {
       worker.failNextRequests(10);
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: fetch,
         baseDelayMs: 1,
         maxAttempts: 3,
@@ -140,7 +140,7 @@ describe('可靠重试与多库报告（task 5.6）', () => {
     );
     try {
       const io = createIo({
-        env: { MEM_CONFIG: file.path },
+        env: { LIUSHUI_CONFIG: file.path },
         fetchImpl: fetch,
         baseDelayMs: 1,
         maxAttempts: 2,

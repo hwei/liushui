@@ -180,7 +180,7 @@ test(
       }
       writeFileSync(
         join(workDir, '.dev.vars'),
-        `MEM_VAULT_TOKENS=${JSON.stringify(tokens)}\n`,
+        `LIUSHUI_VAULT_TOKENS=${JSON.stringify(tokens)}\n`,
       );
 
       const workerPort = await freePort();

@@ -80,7 +80,7 @@ npm run migrate
 
 ## 3. 生成本系统的 token 并写入 Worker secrets
 
-`MEM_VAULT_TOKENS` 把**本系统的 token** 绑定到**库**。token 是客户端持有的凭据，
+`LIUSHUI_VAULT_TOKENS` 把**本系统的 token** 绑定到**库**。token 是客户端持有的凭据，
 与上面的 Turso 凭据（`authToken`）是两层，互不相同。
 
 ```bash
@@ -97,7 +97,7 @@ JSON
 
 ```bash
 cd packages/worker
-printf '%s' "$MEM_VAULT_TOKENS" | npx wrangler secret put MEM_VAULT_TOKENS --env dev
+printf '%s' "$LIUSHUI_VAULT_TOKENS" | npx wrangler secret put LIUSHUI_VAULT_TOKENS --env dev
 ```
 
 首次对某个环境执行时，如果该 Worker 还不存在，wrangler 会问是否新建（非交互环境会
@@ -106,7 +106,7 @@ auto-yes 并打印 `Creating new Worker ...`），然后上传 secret；随后�
 可选 secrets：
 
 ```bash
-printf '%s' '131072' | npx wrangler secret put MEM_MAX_CONTENT_BYTES --env dev   # 可选
+printf '%s' '131072' | npx wrangler secret put LIUSHUI_MAX_CONTENT_BYTES --env dev   # 可选
 ```
 
 `SERVICE_VERSION` 是普通变量，写在 `packages/worker/wrangler.toml` 的 `[env.dev.vars]` / `[env.prod.vars]` 里，
@@ -137,7 +137,7 @@ curl -i -X POST https://liushui-mem-dev.<subdomain>.workers.dev/append -d '{}'
 ## 6. 新机器上的 CLI 配置
 
 1. 安装 Node.js >= 24，克隆仓库，`npm install`。
-2. 创建配置文件（默认 `~/.config/mem/config.json`，或用 `MEM_CONFIG` 指向别处）：
+2. 创建配置文件（默认 `~/.config/liushui/config.json`，或用 `LIUSHUI_CONFIG` 指向别处）：
 
 ```json
 {
@@ -167,18 +167,18 @@ curl -i -X POST https://liushui-mem-dev.<subdomain>.workers.dev/append -d '{}'
 3. 收紧权限并验证：
 
 ```bash
-chmod 600 ~/.config/mem/config.json
+chmod 600 ~/.config/liushui/config.json
 
 # 出网需要代理时（见第 0 节）
 export NODE_USE_ENV_PROXY=1
 
-node packages/cli/bin/mem.ts append "新机器冒烟"
+node packages/cli/bin/liushui.ts append "新机器冒烟"
 # → 输出 26 位 id，退出码 0
 
-node packages/cli/bin/mem.ts append --vault personal,work "多库冒烟"
+node packages/cli/bin/liushui.ts append --vault personal,work "多库冒烟"
 # → 两行 JSONL，两个库的 id 相同
 
-node packages/cli/bin/mem.ts append --env prod "prod 冒烟"
+node packages/cli/bin/liushui.ts append --env prod "prod 冒烟"
 # → 用配置里 prod 环境的库
 ```
 
@@ -212,17 +212,17 @@ curl -i -X POST https://liushui-mem-prod.<subdomain>.workers.dev/append \
 NEW_PERSONAL_TOKEN=$(openssl rand -hex 32)
 ```
 
-2. 在 `MEM_VAULT_TOKENS` 中**保留旧 key 并加入新 key**（两个 key 指向同一个库），写入 secret 并部署：
+2. 在 `LIUSHUI_VAULT_TOKENS` 中**保留旧 key 并加入新 key**（两个 key 指向同一个库），写入 secret 并部署：
 
 ```bash
-printf '%s' "$MEM_VAULT_TOKENS_WITH_BOTH" | npx wrangler secret put MEM_VAULT_TOKENS --env dev
+printf '%s' "$LIUSHUI_VAULT_TOKENS_WITH_BOTH" | npx wrangler secret put LIUSHUI_VAULT_TOKENS --env dev
 cd packages/worker && npx wrangler deploy --env dev
 ```
 
 3. 更新所有机器上的 CLI 配置，验证新 token 可用：
 
 ```bash
-node packages/cli/bin/mem.ts append "轮换验证"
+node packages/cli/bin/liushui.ts append "轮换验证"
 ```
 
 4. 删掉旧 key，再次写入 secret 并部署；确认旧 token 返回 401。
@@ -230,8 +230,8 @@ node packages/cli/bin/mem.ts append "轮换验证"
 ### 8.2 轮换 Turso 凭据
 
 1. `turso db tokens create <db>` 生成新凭据（可同时有效）。
-2. 更新 `MEM_VAULT_TOKENS` 中该库的 `authToken`，写 secret 并部署。
-3. 验证写入仍然成功（`mem append` 返回 id）。
+2. 更新 `LIUSHUI_VAULT_TOKENS` 中该库的 `authToken`，写 secret 并部署。
+3. 验证写入仍然成功（`liushui append` 返回 id）。
 4. `turso db tokens invalidate <db> --all-but-this-one`（或逐个失效旧凭据），再次验证。
 
 ### 8.3 轮换过程中的幂等
@@ -244,10 +244,10 @@ node packages/cli/bin/mem.ts append "轮换验证"
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | `GET /health` 返回旧版本 | 部署未生效或看错环境 | 检查 `SERVICE_VERSION` 与 `--env`；重跑 `wrangler deploy --env <env>` |
-| `/append` 返回 500 `server_misconfigured` | `MEM_VAULT_TOKENS` 不是合法 JSON 或缺字段 | 重新写入 secret；`vault`/`url` 必须非空 |
+| `/append` 返回 500 `server_misconfigured` | `LIUSHUI_VAULT_TOKENS` 不是合法 JSON 或缺字段 | 重新写入 secret；`vault`/`url` 必须非空 |
 | `/append` 返回 503 `storage_unavailable` | 数据库不可达或 Turso 凭据失效 | 检查 `url`/`authToken`；必要时轮换凭据（8.2） |
-| `/append` 返回 401 | token 未配置到该环境 | 确认 CLI 用的配置文件与环境，以及 `MEM_VAULT_TOKENS` 中的 key |
+| `/append` 返回 401 | token 未配置到该环境 | 确认 CLI 用的配置文件与环境，以及 `LIUSHUI_VAULT_TOKENS` 中的 key |
 | `/append` 返回 403 `vault_mismatch` | 请求体里的 `vault` 与 token 绑定的库不同 | 用该库自己的 token，或去掉请求体的 `vault` 字段 |
-| `/append` 返回 413 `content_too_large` | `content` 超过 `MEM_MAX_CONTENT_BYTES` | 截断内容或调整上限 |
-| CLI 报「未找到配置文件」 | 未创建配置或未设置 `MEM_CONFIG` | 见第 6 节 |
+| `/append` 返回 413 `content_too_large` | `content` 超过 `LIUSHUI_MAX_CONTENT_BYTES` | 截断内容或调整上限 |
+| CLI 报「未找到配置文件」 | 未创建配置或未设置 `LIUSHUI_CONFIG` | 见第 6 节 |
 | 迁移报 `schema 已是最新` 但仍无表 | 连到了错误的数据库 | 用 `turso db shell <db> '.tables'` 确认 |

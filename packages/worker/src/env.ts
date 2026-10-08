@@ -24,11 +24,11 @@ export interface Env {
   /** 服务版本，健康检查返回。 */
   SERVICE_VERSION?: string;
   /** JSON：{ "<token>": { "vault": string, "url": string, "authToken"?: string } } */
-  MEM_VAULT_TOKENS: string;
+  LIUSHUI_VAULT_TOKENS: string;
   /** 可选的 content 上限（UTF-8 字节）。 */
-  MEM_MAX_CONTENT_BYTES?: string;
+  LIUSHUI_MAX_CONTENT_BYTES?: string;
   /** 可选的 schema 版本覆盖（默认取 core 的 SCHEMA_VERSION）。 */
-  MEM_SCHEMA_V?: string;
+  LIUSHUI_SCHEMA_V?: string;
 }
 
 /** 解析后的运行时配置。 */
@@ -51,39 +51,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 解析 `MEM_VAULT_TOKENS`。结构非法时抛 `ConfigError`（不包含 token 明文）。
+ * 解析 `LIUSHUI_VAULT_TOKENS`。结构非法时抛 `ConfigError`（不包含 token 明文）。
  */
 export function parseVaultTokens(raw: string | undefined): VaultEntry[] {
   if (!raw || raw.trim() === '') {
-    throw new ConfigError('未配置 MEM_VAULT_TOKENS');
+    throw new ConfigError('未配置 LIUSHUI_VAULT_TOKENS');
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new ConfigError('MEM_VAULT_TOKENS 不是合法 JSON');
+    throw new ConfigError('LIUSHUI_VAULT_TOKENS 不是合法 JSON');
   }
   if (!isRecord(parsed)) {
-    throw new ConfigError('MEM_VAULT_TOKENS 必须是 { token: {...} } 形式的对象');
+    throw new ConfigError('LIUSHUI_VAULT_TOKENS 必须是 { token: {...} } 形式的对象');
   }
 
   const entries: VaultEntry[] = [];
   for (const [token, value] of Object.entries(parsed)) {
-    if (token.length === 0) throw new ConfigError('MEM_VAULT_TOKENS 含空 token');
-    if (!isRecord(value)) throw new ConfigError('MEM_VAULT_TOKENS 的每一项必须是对象');
+    if (token.length === 0) throw new ConfigError('LIUSHUI_VAULT_TOKENS 含空 token');
+    if (!isRecord(value)) throw new ConfigError('LIUSHUI_VAULT_TOKENS 的每一项必须是对象');
     const { vault, url, authToken } = value;
     if (typeof vault !== 'string' || vault.length === 0) {
-      throw new ConfigError('MEM_VAULT_TOKENS 的每一项都需要非空 vault');
+      throw new ConfigError('LIUSHUI_VAULT_TOKENS 的每一项都需要非空 vault');
     }
     if (typeof url !== 'string' || url.length === 0) {
-      throw new ConfigError('MEM_VAULT_TOKENS 的每一项都需要非空 url');
+      throw new ConfigError('LIUSHUI_VAULT_TOKENS 的每一项都需要非空 url');
     }
     if (authToken !== undefined && typeof authToken !== 'string') {
-      throw new ConfigError('MEM_VAULT_TOKENS 的 authToken 必须是字符串');
+      throw new ConfigError('LIUSHUI_VAULT_TOKENS 的 authToken 必须是字符串');
     }
     entries.push({ token, vault, url, authToken: authToken ?? '' });
   }
-  if (entries.length === 0) throw new ConfigError('MEM_VAULT_TOKENS 未配置任何库');
+  if (entries.length === 0) throw new ConfigError('LIUSHUI_VAULT_TOKENS 未配置任何库');
   return entries;
 }
 
@@ -99,9 +99,9 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 /** 解析完整的运行时配置。 */
 export function loadConfig(env: Env): WorkerConfig {
   return {
-    entries: parseVaultTokens(env.MEM_VAULT_TOKENS),
-    maxContentBytes: parsePositiveInt(env.MEM_MAX_CONTENT_BYTES, DEFAULT_MAX_CONTENT_BYTES),
-    schemaVersion: parsePositiveInt(env.MEM_SCHEMA_V, SCHEMA_VERSION),
+    entries: parseVaultTokens(env.LIUSHUI_VAULT_TOKENS),
+    maxContentBytes: parsePositiveInt(env.LIUSHUI_MAX_CONTENT_BYTES, DEFAULT_MAX_CONTENT_BYTES),
+    schemaVersion: parsePositiveInt(env.LIUSHUI_SCHEMA_V, SCHEMA_VERSION),
   };
 }
 

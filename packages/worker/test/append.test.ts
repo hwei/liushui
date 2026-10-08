@@ -63,7 +63,7 @@ describe('追加端点（task 4.2）', () => {
   });
 
   it('content 超过大小上限返回 413 且不写入', async () => {
-    const env = { ...ctx.env, MEM_MAX_CONTENT_BYTES: '16' };
+    const env = { ...ctx.env, LIUSHUI_MAX_CONTENT_BYTES: '16' };
     const body = await makeAppendBody({ content: 'x'.repeat(17) });
     const response = await handleRequest(appendRequest(body, PERSONAL_TOKEN), env, ctx.deps);
     expect(response.status).toBe(413);
@@ -112,7 +112,7 @@ describe('追加端点（task 4.2）', () => {
     const oldBody = await makeAppendBody();
     await callAppend(ctx, oldBody, PERSONAL_TOKEN);
 
-    const upgradedEnv = { ...ctx.env, MEM_SCHEMA_V: '2' };
+    const upgradedEnv = { ...ctx.env, LIUSHUI_SCHEMA_V: '2' };
     const newBody = await makeAppendBody({ content: '新 schema 版本写入' });
     const response = await handleRequest(
       appendRequest(newBody, PERSONAL_TOKEN),

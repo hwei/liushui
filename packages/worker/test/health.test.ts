@@ -28,7 +28,7 @@ describe('健康检查（task 4.4）', () => {
     };
     const response = await handleRequest(
       new Request('https://mem.test/health'),
-      { ...ctx.env, MEM_VAULT_TOKENS: 'not-even-json' },
+      { ...ctx.env, LIUSHUI_VAULT_TOKENS: 'not-even-json' },
       deps,
     );
     expect(response.status).toBe(200);

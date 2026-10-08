@@ -32,13 +32,13 @@ export interface CliIo {
 }
 
 const USAGE = `用法：
-  mem append [--vault <name>]... [--kind <kind>] [--config <path>] [--env <name>] <内容...>
-  mem --version
-  mem --help
+  liushui append [--vault <name>]... [--kind <kind>] [--config <path>] [--env <name>] <内容...>
+  liushui --version
+  liushui --help
 
 示例：
-  mem append "修复了 iOS 渲染问题"
-  mem append --vault personal --vault work --kind note "同一条记忆写入两个库"
+  liushui append "修复了 iOS 渲染问题"
+  liushui append --vault personal --vault work --kind note "同一条记忆写入两个库"
 
 说明：
   --vault 可重复，也可用逗号分隔（--vault personal,work）；省略时使用配置中的默认库。
@@ -173,7 +173,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
   }
 
   // token 清洗的最后一道防线：把配置文件里出现过的 token 全部抹掉。
-  const secrets = readConfiguredTokens(args.configPath ?? io.env['MEM_CONFIG']);
+  const secrets = readConfiguredTokens(args.configPath ?? io.env['LIUSHUI_CONFIG']);
   const out = (text: string): void => io.stdout(scrubSecrets(text, secrets));
   const err = (text: string): void => io.stderr(scrubSecrets(text, secrets));
 
@@ -210,14 +210,14 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
         out(`${report.id}\n`);
         return 0;
       }
-      err(`mem: 库 ${report.vault} 写入失败：${report.message ?? '未知错误'}\n`);
+      err(`liushui: 库 ${report.vault} 写入失败：${report.message ?? '未知错误'}\n`);
       return 1;
     }
 
     out(`${formatMultiVaultReport(result.reports)}\n`);
     if (!result.ok) {
       const failed = result.reports.filter((report) => !report.ok).map((report) => report.vault);
-      err(`mem: 以下库写入失败：${failed.join(', ')}\n`);
+      err(`liushui: 以下库写入失败：${failed.join(', ')}\n`);
       return 1;
     }
     return 0;
@@ -227,7 +227,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
       return error.exitCode;
     }
     const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    err(`mem: 未预期的错误：${detail}\n`);
+    err(`liushui: 未预期的错误：${detail}\n`);
     return 1;
   }
 }
