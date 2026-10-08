@@ -168,6 +168,8 @@ node packages/cli/bin/liushui.ts append --vault personal,work --kind note "同�
 export NODE_USE_ENV_PROXY=1     # Node 24 起支持
 ```
 
+CLI 现在会在网络失败时自行提示这一点（`NODE_USE_ENV_PROXY`），不必先看到这条 FAQ。
+
 **在 Windows 上装 Turso CLI**
 官方 `install.sh` 只支持 Darwin/Linux（`probe_os()` 里没有 Windows 分支）。用 Go 装：
 

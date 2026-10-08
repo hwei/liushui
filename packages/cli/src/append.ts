@@ -12,6 +12,7 @@ import { postAppend, type AppendFailureKind, type AppendOutcome } from './client
 import { loadConfig, type ResolvedVault } from './config.ts';
 import { CliError } from './errors.ts';
 import { collectMeta, type GitRunner } from './meta.ts';
+import { proxyHint } from './proxy-hint.ts';
 import { redactMeta } from './redact.ts';
 
 export interface AppendCommandOptions {
@@ -59,7 +60,11 @@ export function resolveAuthor(env: Record<string, string | undefined>): string {
   return env['LIUSHUI_AUTHOR'] ?? env['USER'] ?? env['USERNAME'] ?? 'unknown';
 }
 
-function toReport(vault: ResolvedVault, outcome: AppendOutcome): VaultReport {
+function toReport(
+  vault: ResolvedVault,
+  outcome: AppendOutcome,
+  networkHint: string | null,
+): VaultReport {
   if (outcome.ok) {
     return {
       vault: vault.name,
@@ -72,6 +77,11 @@ function toReport(vault: ResolvedVault, outcome: AppendOutcome): VaultReport {
       attempts: outcome.attempts,
     };
   }
+  // 只在网络类失败时附加代理提示；服务端 / 客户端错误保持原样。
+  const message =
+    outcome.kind === 'network' && networkHint !== null
+      ? `${outcome.message}\n${networkHint}`
+      : outcome.message;
   return {
     vault: vault.name,
     ok: false,
@@ -79,7 +89,7 @@ function toReport(vault: ResolvedVault, outcome: AppendOutcome): VaultReport {
     created: null,
     failureKind: outcome.kind,
     code: outcome.code,
-    message: outcome.message,
+    message,
     attempts: outcome.attempts,
   };
 }
@@ -125,6 +135,7 @@ export async function runAppend(
   });
 
   const reports: VaultReport[] = [];
+  const networkHint = proxyHint(deps.env);
   for (const { vault, meta: vaultMeta } of buildMetaByVault(meta, config.vaults)) {
     const outcome = await postAppend(
       vault,
@@ -136,7 +147,7 @@ export async function runAppend(
         ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
       },
     );
-    reports.push(toReport(vault, outcome));
+    reports.push(toReport(vault, outcome, networkHint));
   }
 
   return { id, ts, ok: reports.every((report) => report.ok), reports };

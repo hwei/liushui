@@ -225,3 +225,121 @@ describe('liushui append（task 5.5）', () => {
     }
   });
 });
+
+describe('网络错误的诊断提示（task 1.2）', () => {
+  const alwaysNetworkError = createFetchStub(() => {
+    throw new TypeError('network down');
+  });
+
+  it('单库网络失败时 stderr 带上代理提示', async () => {
+    const file = writeTempConfig(CONFIG);
+    try {
+      const io = createIo({
+        env: {
+          LIUSHUI_CONFIG: file.path,
+          HTTPS_PROXY: 'http://127.0.0.1:7897',
+        },
+        fetchImpl: alwaysNetworkError.fetchImpl,
+        maxAttempts: 1,
+        baseDelayMs: 1,
+      });
+
+      const code = await main(['append', '代理未启用的记忆'], io);
+
+      expect(code).toBe(1);
+      expect(io.stderrText()).toContain('网络错误');
+      expect(io.stderrText()).toContain('NODE_USE_ENV_PROXY');
+      expect(io.stderrText()).not.toContain('127.0.0.1');
+    } finally {
+      file.remove();
+    }
+  });
+
+  it('多库提交时失败库的 JSONL message 也带上提示', async () => {
+    const file = writeTempConfig(MULTI_CONFIG);
+    try {
+      const stub = createFetchStub((call) => {
+        if (call.url.startsWith('http://work.test')) throw new TypeError('network down');
+        return jsonResponse({ id: call.body['id'], created: true }, 201);
+      });
+      const io = createIo({
+        env: { LIUSHUI_CONFIG: file.path, HTTPS_PROXY: 'http://127.0.0.1:7897' },
+        fetchImpl: stub.fetchImpl,
+        maxAttempts: 1,
+        baseDelayMs: 1,
+      });
+
+      const code = await main(['append', '--vault', 'personal,work', '一库失败'], io);
+
+      expect(code).toBe(1);
+      const lines = io.stdoutText().trim().split('\n').map((line) => JSON.parse(line));
+      const personal = lines.find((line) => line.vault === 'personal');
+      const work = lines.find((line) => line.vault === 'work');
+      expect(personal).toMatchObject({ ok: true });
+      expect(work).toMatchObject({ ok: false, failure: 'network' });
+      expect(work.message).toContain('NODE_USE_ENV_PROXY');
+    } finally {
+      file.remove();
+    }
+  });
+
+  it('客户端错误（4xx）不附加提示', async () => {
+    const file = writeTempConfig(CONFIG);
+    try {
+      const stub = createFetchStub(() =>
+        jsonResponse({ error: { code: 'invalid' } }, 400),
+      );
+      const io = createIo({
+        env: { LIUSHUI_CONFIG: file.path, HTTPS_PROXY: 'http://127.0.0.1:7897' },
+        fetchImpl: stub.fetchImpl,
+        maxAttempts: 1,
+        baseDelayMs: 1,
+      });
+
+      expect(await main(['append', '客户端错误'], io)).toBe(1);
+      expect(io.stderrText()).toContain('400');
+      expect(io.stderrText()).not.toContain('NODE_USE_ENV_PROXY');
+    } finally {
+      file.remove();
+    }
+  });
+
+  it('服务端错误（5xx）不附加提示', async () => {
+    const file = writeTempConfig(CONFIG);
+    try {
+      const stub = createFetchStub(() =>
+        jsonResponse({ error: { code: 'storage' } }, 503),
+      );
+      const io = createIo({
+        env: { LIUSHUI_CONFIG: file.path, HTTPS_PROXY: 'http://127.0.0.1:7897' },
+        fetchImpl: stub.fetchImpl,
+        maxAttempts: 1,
+        baseDelayMs: 1,
+      });
+
+      expect(await main(['append', '服务端错误'], io)).toBe(1);
+      expect(io.stderrText()).toContain('503');
+      expect(io.stderrText()).not.toContain('NODE_USE_ENV_PROXY');
+    } finally {
+      file.remove();
+    }
+  });
+
+  it('未配置代理时网络失败不加提示', async () => {
+    const file = writeTempConfig(CONFIG);
+    try {
+      const io = createIo({
+        env: { LIUSHUI_CONFIG: file.path },
+        fetchImpl: alwaysNetworkError.fetchImpl,
+        maxAttempts: 1,
+        baseDelayMs: 1,
+      });
+
+      expect(await main(['append', '无代理'], io)).toBe(1);
+      expect(io.stderrText()).toContain('网络错误');
+      expect(io.stderrText()).not.toContain('NODE_USE_ENV_PROXY');
+    } finally {
+      file.remove();
+    }
+  });
+});

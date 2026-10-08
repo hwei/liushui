@@ -127,4 +127,20 @@ describe('追加端点（task 4.2）', () => {
     expect(oldRecord?.content).toBe('一条记忆');
     expect(newRecord?.schema_v).toBe(2);
   });
+
+  it('客户端时钟超前时两个时间字段都按原值保存（memory-ledger: 客户钟超前）', async () => {
+    // 全部时钟注入，不依赖真实时间：服务端时钟早于提交的 ts。
+    const serverNow = '2026-10-08T07:00:00.000Z';
+    ctx.setNow(serverNow);
+
+    const body = await makeAppendBody({ ts: FIXED_TS });
+    const { status } = await callAppend(ctx, body, PERSONAL_TOKEN);
+    expect(status).toBe(201);
+
+    const stored = await getMemory(ctx.vaults['personal']!.client, String(body['id']));
+    expect(stored?.ts).toBe(FIXED_TS);
+    expect(stored?.received_at).toBe(serverNow);
+    expect(String(stored?.received_at) < FIXED_TS).toBe(true);
+    expect(await countMemories(ctx.vaults['personal']!.client)).toBe(1);
+  });
 });

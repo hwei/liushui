@@ -45,6 +45,8 @@ Node 的 `fetch` **默认不读** `HTTP_PROXY` / `HTTPS_PROXY`（curl 会读）�
 export NODE_USE_ENV_PROXY=1     # Node 24 起支持
 ```
 
+CLI 在网络失败时会自行提示这一点，不必自己对照本节排障。
+
 ## 1. 创建数据库（每库一个）
 
 以 dev 的 `personal` 与 `work` 两个库为例：
