@@ -25,23 +25,27 @@
 - [x] 4.4 实现无鉴权、不访问数据库的 `GET /health`，返回服务版本；验证响应含版本
 - [x] 4.5 在 wrangler 本地模式下以本地 libSQL 文件库跑通 API 集成测试，覆盖两个库的隔离；验证个人库 token 写入后公司库无记录
 
-## 5. CLI（`cli`）：`mem append`
+## 5. CLI（`cli`）：`liushui append`
 
 - [x] 5.1 实现配置读取（各库地址与 token、默认库、环境选择）与未配置时的提示；验证 token 不出现在任何输出与日志中
 - [x] 5.2 实现 meta 自动采集（host、os、cwd、git.repo/branch/commit/dirty、proc、agent.name/session、cli.version、tz、src）；验证在 git 仓库内含 `git.*`，在非 git 目录不含
 - [x] 5.3 实现敏感信息清洗（git remote userinfo 移除，清洗失败则省略字段）；验证单测以含 `user:token@` 的 remote 为输入
 - [x] 5.4 实现按库的 meta 脱敏配置；验证同一条记忆发往两个库时 ID 相同而 meta 按各库配置不同
-- [x] 5.5 实现 `mem append`（`--vault`、`--kind`，默认 `note`；空内容报错；紧凑输出 `id`）；验证成功时退出码 0 且输出 `id`
+- [x] 5.5 实现 `liushui append`（`--vault`、`--kind`，默认 `note`；空内容报错；紧凑输出 `id`）；验证成功时退出码 0 且输出 `id`
 - [x] 5.6 实现重试（网络错误与服务端错误复用同一 `ts` 与 `id` 重试，未授权与格式错误不重试）与多库结果报告；验证对本地 Worker 注入故障后库中仍只有一条记录，且单库失败时退出码非 0 并逐库报告
+
+
+- [ ] 5.7 把 CLI 命令名与配置目录落地为 `liushui` 与 `~/.config/liushui/`，并把 CLI 环境变量前缀改为 `LIUSHUI_`（`bin/liushui.ts`、package.json 的 `bin`、默认配置路径、`LIUSHUI_CONFIG` / `LIUSHUI_ENV` / `LIUSHUI_AUTHOR` / `LIUSHUI_AGENT_*` / `LIUSHUI_SRC`、README 与 docs/deploy.md），并迁移本机既有配置
 
 ## 6. 部署与首次真实验证
 
 - [x] 6.1 创建 dev 与 prod 的 Turso 数据库与 Worker 配置，secrets 通过 wrangler 设置；验证 dev 的 `GET /health` 返回版本
-- [x] 6.2 在 dev 执行迁移并用 `mem append` 写入真实记录；验证重复执行同一命令后 dev 库中仍只有一条
+- [x] 6.2 在 dev 执行迁移并用 `liushui append` 写入真实记录；验证重复执行同一命令后 dev 库中仍只有一条
 - [x] 6.3 验证 dev 的 token 无法访问 prod，且 prod 的 token 无法访问 dev
 - [x] 6.4 部署 prod，执行一次冒烟（health 加一条写入）；验证 `received_at`、`schema_v`、`meta` 在真实库中符合预期
 - [x] 6.5 编写部署与 token 轮换文档；验证按文档可在新机器上完成 CLI 配置并写入成功
 
+- [ ] 6.6 把 Worker 的 secrets 与变量重命名为 `LIUSHUI_VAULT_TOKENS` / `LIUSHUI_MAX_CONTENT_BYTES` / `LIUSHUI_SCHEMA_V`；先设新 secret、再部署新代码，重跑 6.2–6.4 的验证，最后删除旧 secret
 ## 7. 综合验证
 
 - [x] 7.1 对照三个 spec 的全部 Scenario 逐条核对测试与真实环境结果，补齐缺失用例

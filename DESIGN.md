@@ -39,8 +39,8 @@ meta 由 CLI 自动采集，不依赖 agent 手填。
 ## 接口
 
 ### CLI
-- `mem append [--vault ...] [--kind ...] [--file x.png] "文本"`：追加记忆，附件由 CLI 上传 R2
-- `mem sql "<SELECT ...>"`：只读查询
+- `liushui append [--vault ...] [--kind ...] [--file x.png] "文本"`：追加记忆，附件由 CLI 上传 R2
+- `liushui sql "<SELECT ...>"`：只读查询
 
 输出默认紧凑格式（JSONL/TSV），限制行数与字段长度，避免撑爆 agent 上下文。
 

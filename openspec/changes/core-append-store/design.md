@@ -12,7 +12,7 @@
 ## Goals / Non-Goals
 
 **Goals:**
-- 一个可部署的最小闭环：`mem append` → Worker → Turso，幂等、可鉴权、dev/prod 隔离。
+- 一个可部署的最小闭环：`liushui append` → Worker → Turso，幂等、可鉴权、dev/prod 隔离。
 - 定下后续 change 都依赖的契约：记录字段、ID 规则、meta 约定、schema_v。
 - 所有核心逻辑（规范化与 hash、校验）能在本地不依赖云端测试。
 
@@ -77,6 +77,19 @@ schema 以顺序编号的 SQL 文件管理，部署时对每个库幂等执行�
 - 本地：用本地 libSQL 文件库加 wrangler 本地模式，覆盖 ID、校验、幂等、鉴权、多库隔离、CLI 重试。
 - 部署：dev 与 prod 各一套（独立 Worker、独立 Turso DB、独立 token）。完成本 change 后在 dev 做首次冒烟（真实 Turso 凭据、token、CLI 指向真实 URL），再部署 prod。
 - 理由：基础设施风险（secrets、网络、Turso 凭据）只能在真实环境暴露，越早越好。
+
+### 10. CLI 命名、配置位置与环境变量前缀
+可执行文件名为 `liushui`（与项目同名），不叫 `mem`；本地配置放在 `~/.config/liushui/config.json`；
+环境变量与 Worker secrets 统一使用 `LIUSHUI_` 前缀：CLI 侧 `LIUSHUI_CONFIG`、`LIUSHUI_ENV`、
+`LIUSHUI_AUTHOR`、`LIUSHUI_AGENT_NAME` / `LIUSHUI_AGENT_SESSION` / `LIUSHUI_SESSION`、`LIUSHUI_SRC`；
+Worker 侧 `LIUSHUI_VAULT_TOKENS`、`LIUSHUI_MAX_CONTENT_BYTES`、`LIUSHUI_SCHEMA_V`。
+
+- 理由：`mem` 过于通用，既可能与其它软件或同名命令撞车，也容易和仓库内的 `memories`（表名）、
+  `mem_vec_idx`（将来的向量索引）以及外部的 `mem0` 混读；`LIUSHUI_` 前缀让配置与凭据的来源一眼可辨。
+- 备选：保留 `mem` 作为命令名、只改配置目录。放弃：命令名是人和 agent 每天要输入的东西，含糊的名字代价最高。
+- 取舍：配置路径**不写进 spec**（spec 只要求「从本地配置读取」），路径可被 `LIUSHUI_CONFIG` 或
+  `--config` 覆盖，因此以后改路径不需要改契约。
+- 影响：改名后需重新设置 dev 与 prod 的 Worker secrets —— 先设新名、再部署新代码，验证通过后删旧名，避免中断。
 
 ## Risks / Trade-offs
 

@@ -2,19 +2,19 @@
 
 ## Purpose
 
-提供人和 agent 共用的本地命令行入口 `mem append`：自动采集运行环境的 meta、清洗敏感信息，把一条文本记忆可靠地追加到一个或多个库，不依赖调用方手工填写元信息。
+提供人和 agent 共用的本地命令行入口 `liushui append`：自动采集运行环境的 meta、清洗敏感信息，把一条文本记忆可靠地追加到一个或多个库，不依赖调用方手工填写元信息。
 
 ## ADDED Requirements
 
 ### Requirement: 追加命令
-CLI SHALL 提供 `mem append`，接收文本内容，并支持 `--vault` 与 `--kind` 选项。省略 `--kind` 时 MUST 默认为 `note`。成功时输出新记忆的 `id`，输出紧凑、便于 agent 解析。
+CLI SHALL 提供 `liushui append`，接收文本内容，并支持 `--vault` 与 `--kind` 选项。省略 `--kind` 时 MUST 默认为 `note`。成功时输出新记忆的 `id`，输出紧凑、便于 agent 解析。
 
 #### Scenario: 追加一条文本
-- **WHEN** 执行 `mem append "修复了 iOS 渲染问题"`
+- **WHEN** 执行 `liushui append "修复了 iOS 渲染问题"`
 - **THEN** 记忆被追加到默认库，命令输出该记忆的 `id`，退出码为 0
 
 #### Scenario: 内容为空被拒绝
-- **WHEN** 执行 `mem append ""`
+- **WHEN** 执行 `liushui append ""`
 - **THEN** 命令报错并以非 0 退出，不发出请求
 
 ### Requirement: meta 自动采集
