@@ -15,5 +15,8 @@
   "dependencies": {
     "@libsql/client": "^0.15.0",
     "@liushui/core": "*"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
   }
 }
