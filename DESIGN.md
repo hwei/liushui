@@ -26,13 +26,17 @@
 
 ## 记忆的数据模型
 
+（总体设计，包含尚未实现的部分；已实现的行为契约以 `openspec/specs/` 下的主 spec 为准。）
+
 每条记忆：
-- `id`：全局稳定 ID（永久锚点）
-- `ts`：时间
+- `id`：全局稳定 ID（永久锚点）；由核心字段规范化后取 hash 得到，与 meta、目标库无关
+- `ts`：时间；由客户端提供，重试时保持不变（幂等的前提）
 - `kind`：`note` / `image` / `retrieval_feedback` / `maintenance_log` …
 - `content`：文本；附件存 R2，表中存引用 + 描述文本
-- meta：地点、作者（人或哪个 agent）、主机名、当前进程、工作区（cwd、git 仓库）
-- 所属库：多对多（或每库独立 DB、提交时复制写入，便于权限隔离——待定）
+- meta：JSON 键值对象（地点、作者（人或哪个 agent）、主机名、当前进程、工作区（cwd、git 仓库）…），不参与 ID
+- `received_at`：服务端接收时刻，不参与 ID；可作时钟偏差的旁证
+- `schema_v`：写入时的 schema 版本
+- 所属库：**每个库一个独立数据库**（已定案；一条 SQL 不跨库）。同一条记忆可提交到多个库，`id` 相同而 meta 可按库脱敏；跨库隔离由 token→库的绑定保证
 
 meta 由 CLI 自动采集，不依赖 agent 手填。
 
@@ -50,11 +54,14 @@ meta 由 CLI 自动采集，不依赖 agent 手填。
 - 语义检索通过 `embed('文本')` 宏：服务端预处理，把它替换为向量参数后再执行
 
 ```sql
-SELECT m.id, m.ts, m.author, m.text
+SELECT m.id, m.ts, m.author, m.content
 FROM vector_top_k('mem_vec_idx', embed('上次 iOS 渲染问题怎么查的'), 20) v
 JOIN memories m ON m.rowid = v.id
-WHERE m.vault = 'personal' AND m.ts > '2026-01-01';
+WHERE m.ts > '2026-01-01';
 ```
+
+库隔离在数据库层面完成（每个库一个独立 DB、每个 token 只能连到自己那个），
+因此 `memories` 表里没有 `vault` 列，查询也不需要按库过滤。
 
 向量召回、FTS5 `MATCH`、meta 过滤可在一条 SQL 中自由组合。
 
