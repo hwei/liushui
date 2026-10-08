@@ -36,15 +36,15 @@
 
 ## 6. 部署与首次真实验证
 
-- [ ] 6.1 创建 dev 与 prod 的 Turso 数据库与 Worker 配置，secrets 通过 wrangler 设置；验证 dev 的 `GET /health` 返回版本
-- [ ] 6.2 在 dev 执行迁移并用 `mem append` 写入真实记录；验证重复执行同一命令后 dev 库中仍只有一条
-- [ ] 6.3 验证 dev 的 token 无法访问 prod，且 prod 的 token 无法访问 dev
-- [ ] 6.4 部署 prod，执行一次冒烟（health 加一条写入）；验证 `received_at`、`schema_v`、`meta` 在真实库中符合预期
-- [ ] 6.5 编写部署与 token 轮换文档；验证按文档可在新机器上完成 CLI 配置并写入成功
+- [x] 6.1 创建 dev 与 prod 的 Turso 数据库与 Worker 配置，secrets 通过 wrangler 设置；验证 dev 的 `GET /health` 返回版本
+- [x] 6.2 在 dev 执行迁移并用 `mem append` 写入真实记录；验证重复执行同一命令后 dev 库中仍只有一条
+- [x] 6.3 验证 dev 的 token 无法访问 prod，且 prod 的 token 无法访问 dev
+- [x] 6.4 部署 prod，执行一次冒烟（health 加一条写入）；验证 `received_at`、`schema_v`、`meta` 在真实库中符合预期
+- [x] 6.5 编写部署与 token 轮换文档；验证按文档可在新机器上完成 CLI 配置并写入成功
 
 ## 7. 综合验证
 
-- [ ] 7.1 对照三个 spec 的全部 Scenario 逐条核对测试与真实环境结果，补齐缺失用例
+- [x] 7.1 对照三个 spec 的全部 Scenario 逐条核对测试与真实环境结果，补齐缺失用例
 - [ ] 7.2 用本 change 部署的系统开始记录本项目自身的开发记忆，持续使用一段时间；验证无重复、无敏感信息泄漏（检查 `git.repo` 与 `cwd`），并把发现的问题记为后续 change 的输入
 
 ## Workflow follow-up
