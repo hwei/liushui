@@ -158,3 +158,22 @@ node packages/cli/bin/mem.ts append --vault personal,work --kind note "同时写
 - 总体设计：[`DESIGN.md`](./DESIGN.md)
 - 部署与 token 轮换：[`docs/deploy.md`](./docs/deploy.md)
 - 需求与验收标准：[`openspec/`](./openspec)（spec 是唯一需求来源）
+
+## 常见问题
+
+**`mem append` 报「网络错误：TimeoutError」但 curl 同一个地址正常**
+你的机器出网要走代理。Node 的 `fetch` 默认不读 `HTTP_PROXY` / `HTTPS_PROXY`（curl 会读）：
+
+```bash
+export NODE_USE_ENV_PROXY=1     # Node 24 起支持
+```
+
+**在 Windows 上装 Turso CLI**
+官方 `install.sh` 只支持 Darwin/Linux（`probe_os()` 里没有 Windows 分支）。用 Go 装：
+
+```powershell
+go install github.com/tursodatabase/turso-cli/cmd/turso@latest   # → %USERPROFILE%\go\bin\turso.exe
+```
+
+别装 npm 上的 `turso` 包——那是 `tursodb`（本地 SQL shell），不是 cloud 管理 CLI。
+详见 [`docs/deploy.md`](./docs/deploy.md) 第 0 节。

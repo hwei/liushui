@@ -13,10 +13,37 @@ dev 与 prod 之间不共享任何凭据，因此 dev token 无法读写 prod �
 ```bash
 npm install
 npx wrangler login          # Cloudflare
-turso auth login            # Turso CLI（curl -sSfL https://get.tur.so/install.sh | bash）
 ```
 
 需要 Cloudflare 账号（Workers）与 Turso 账号。每个环境的每个库都要建一个数据库。
+
+### Turso CLI 的安装（Windows 注意）
+
+官方 `install.sh` 的 `probe_os()` 只支持 `Darwin` / `Linux`，**Windows 无法用它安装**；
+`scoop` / `winget` 也没有对应包。Windows 上直接用 Go 从源码安装（实测 go1.26 windows/amd64 可用）：
+
+```powershell
+go install github.com/tursodatabase/turso-cli/cmd/turso@latest
+# → %USERPROFILE%\go\bin\turso.exe（约 41 MB）
+```
+
+该目录通常不在 PATH 中，用全路径或自行加 PATH。登录：
+
+```powershell
+turso auth login            # 或 turso auth login --headless，给链接，不依赖本机浏览器
+turso auth whoami
+```
+
+> 别装成 npm 上的 `turso` 包：那是 `tursodb`（本地 SQL shell），不是 cloud 管理 CLI。
+
+### 出网需要代理的机器
+
+Node 的 `fetch` **默认不读** `HTTP_PROXY` / `HTTPS_PROXY`（curl 会读），因此 `mem` 的写入会超时。
+设置后即可（实测本机直连 workers.dev 超时、经代理 200）：
+
+```bash
+export NODE_USE_ENV_PROXY=1     # Node 24 起支持
+```
 
 ## 1. 创建数据库（每库一个）
 
@@ -72,6 +99,9 @@ JSON
 cd packages/worker
 printf '%s' "$MEM_VAULT_TOKENS" | npx wrangler secret put MEM_VAULT_TOKENS --env dev
 ```
+
+首次对某个环境执行时，如果该 Worker 还不存在，wrangler 会问是否新建（非交互环境会
+auto-yes 并打印 `Creating new Worker ...`），然后上传 secret；随后的 `wrangler deploy` 会把它一起发布。
 
 可选 secrets：
 
@@ -139,12 +169,21 @@ curl -i -X POST https://liushui-mem-dev.<subdomain>.workers.dev/append -d '{}'
 ```bash
 chmod 600 ~/.config/mem/config.json
 
+# 出网需要代理时（见第 0 节）
+export NODE_USE_ENV_PROXY=1
+
 node packages/cli/bin/mem.ts append "新机器冒烟"
 # → 输出 26 位 id，退出码 0
 
 node packages/cli/bin/mem.ts append --vault personal,work "多库冒烟"
 # → 两行 JSONL，两个库的 id 相同
+
+node packages/cli/bin/mem.ts append --env prod "prod 冒烟"
+# → 用配置里 prod 环境的库
 ```
+
+4. 用一条只读查询确认记录真的落库（见第 6.1 / 6.2 节的验证记录）：检查 `received_at`、`schema_v`、
+   `meta.git.repo`（应为 `host/path`，不含 userinfo）与 `meta.cwd`（公司库应按配置缺失）。
 
 4. 把配置文件放进 dotfiles/secrets 管理器；**不要把 token 提交进仓库**。CLI 的输出与日志都会清洗 token。
 

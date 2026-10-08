@@ -149,13 +149,14 @@ export function appendRequest(body: unknown, token?: string | null): Request {
   });
 }
 
-/** 调用 Worker 并解析 JSON 响应。 */
+/** 调用 Worker 并解析 JSON 响应（可覆盖 deps / env，便于测试轮换与隔离）。 */
 export async function callAppend(
   ctx: TestContext,
   body: unknown,
   token?: string | null,
   deps: HandlerDeps = ctx.deps,
+  env: Env = ctx.env,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const response = await handleRequest(appendRequest(body, token), ctx.env, deps);
+  const response = await handleRequest(appendRequest(body, token), env, deps);
   return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 }
