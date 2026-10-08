@@ -35,7 +35,7 @@
 - [x] 5.6 实现重试（网络错误与服务端错误复用同一 `ts` 与 `id` 重试，未授权与格式错误不重试）与多库结果报告；验证对本地 Worker 注入故障后库中仍只有一条记录，且单库失败时退出码非 0 并逐库报告
 
 
-- [ ] 5.7 把 CLI 命令名与配置目录落地为 `liushui` 与 `~/.config/liushui/`，并把 CLI 环境变量前缀改为 `LIUSHUI_`（`bin/liushui.ts`、package.json 的 `bin`、默认配置路径、`LIUSHUI_CONFIG` / `LIUSHUI_ENV` / `LIUSHUI_AUTHOR` / `LIUSHUI_AGENT_*` / `LIUSHUI_SRC`、README 与 docs/deploy.md），并迁移本机既有配置
+- [x] 5.7 把 CLI 命令名与配置目录落地为 `liushui` 与 `~/.config/liushui/`，并把 CLI 环境变量前缀改为 `LIUSHUI_`（`bin/liushui.ts`、package.json 的 `bin`、默认配置路径、`LIUSHUI_CONFIG` / `LIUSHUI_ENV` / `LIUSHUI_AUTHOR` / `LIUSHUI_AGENT_*` / `LIUSHUI_SRC`、README 与 docs/deploy.md），并迁移本机既有配置
 
 ## 6. 部署与首次真实验证
 
@@ -45,7 +45,7 @@
 - [x] 6.4 部署 prod，执行一次冒烟（health 加一条写入）；验证 `received_at`、`schema_v`、`meta` 在真实库中符合预期
 - [x] 6.5 编写部署与 token 轮换文档；验证按文档可在新机器上完成 CLI 配置并写入成功
 
-- [ ] 6.6 把 Worker 的 secrets 与变量重命名为 `LIUSHUI_VAULT_TOKENS` / `LIUSHUI_MAX_CONTENT_BYTES` / `LIUSHUI_SCHEMA_V`；先设新 secret、再部署新代码，重跑 6.2–6.4 的验证，最后删除旧 secret
+- [x] 6.6 把 Worker 的 secrets 与变量重命名为 `LIUSHUI_VAULT_TOKENS` / `LIUSHUI_MAX_CONTENT_BYTES` / `LIUSHUI_SCHEMA_V`；先设新 secret、再部署新代码，重跑 6.2–6.4 的验证，最后删除旧 secret
 ## 7. 综合验证
 
 - [x] 7.1 对照三个 spec 的全部 Scenario 逐条核对测试与真实环境结果，补齐缺失用例
