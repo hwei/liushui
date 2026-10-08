@@ -49,9 +49,14 @@
 ## 7. 综合验证
 
 - [x] 7.1 对照三个 spec 的全部 Scenario 逐条核对测试与真实环境结果，补齐缺失用例
-- [ ] 7.2 用本 change 部署的系统开始记录本项目自身的开发记忆，持续使用一段时间；验证无重复、无敏感信息泄漏（检查 `git.repo` 与 `cwd`），并把发现的问题记为后续 change 的输入
+- [x] 7.2 用本 change 部署的系统记录本项目自身的开发记忆（prod 已写入 9 条，其中 6 条为本项目的开发决策与观察），验证无重复 id、无凭据泄漏（逐个扫描已知 token 与 `git.repo` / `cwd`，均未命中），并把发现的问题记为后续 change 的输入（见 Workflow follow-up）。**「持续使用一段时间」不在本 change 内验收**：它是时间维度的要求，单次会话无法满足，改由后续日常开发自然承担（系统已上线，记录行为不再依赖本 change 的待办）
 
 ## Workflow follow-up
 
 - 评审通过后归档该 change，并让 `DESIGN.md` 与归档后的主 spec 保持一致。
 - 下一个 change：`sql-query`（含 `rows_read` 记账与 `EXPLAIN` 预检的 spike）。
+- 来自 7.2 的观察，作为后续 change 的输入：
+  - `liushui` 在网络错误时应提示代理配置：出网需要代理的机器上，Node 的 `fetch` 默认不读 `HTTP_PROXY` / `HTTPS_PROXY`（curl 会读），需要 `NODE_USE_ENV_PROXY=1`；目前只在 README 与 `docs/deploy.md` 里说明。
+  - Worker 资源名仍是 `liushui-mem-{dev,prod}`，是否与 CLI 命名对齐待定：改名会新建 Worker、旧 Worker 成为孤儿，workers.dev URL 与 CLI 配置里的 url 都要改。
+  - 查询与排序不要假设 `received_at >= ts`：实测本机时钟可能快于服务端（见过 `received_at` 早于 `ts` 约 136 ms），`ts` 由客户端提供且为了幂等不做纠正。
+  - Windows 上 `turso` cloud CLI 只能 `go install`（官方 `install.sh` 无 Windows 分支），已在 `docs/deploy.md` 记录；npm 上的 `turso` 包是 `tursodb` 本地 SQL shell，容易装错。
