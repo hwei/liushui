@@ -60,9 +60,16 @@ turso db show liushui-work-dev --url
 
 turso db tokens create liushui-personal-dev   # → Turso 凭据（authToken），只显示一次
 turso db tokens create liushui-work-dev
+
+# 只读查询（/sql）专用：--read-only 生成的 token 在服务端被禁止写入
+turso db tokens create liushui-personal-dev --read-only
+turso db tokens create liushui-work-dev --read-only
 ```
 
 prod 同理，库名换成 `liushui-personal-prod` / `liushui-work-prod`。
+
+> 只读凭据与写凭据是两层，互不牵连：写凭据用于 `/append`，只读凭据用于 `/sql`。
+> 一个库可以由多个 client token 共用同一份只读凭据（见第 8 节）。
 
 ## 2. 执行迁移（幂等）
 
@@ -111,6 +118,22 @@ auto-yes 并打印 `Creating new Worker ...`），然后上传 secret；随后�
 printf '%s' '131072' | npx wrangler secret put LIUSHUI_MAX_CONTENT_BYTES --env dev   # 可选
 ```
 
+### 3.1 写入只读查询凭据 `LIUSHUI_VAULT_READ_CREDS`
+
+`/sql` 只用**只读凭据**连库，凭据放在单独 secret，按**库名**索引，只允许 `authToken`（含 `url` 即报错）：
+
+```bash
+cat <<JSON
+{"personal":{"authToken":"<personal 的 --read-only token>"},"work":{"authToken":"<work 的 --read-only token>"}}
+JSON
+
+printf '%s' "$LIUSHUI_VAULT_READ_CREDS" | npx wrangler secret put LIUSHUI_VAULT_READ_CREDS --env dev
+```
+
+- 这个 secret 缺失或损坏时，`/sql` 返回 `server_misconfigured`（500），且**绝不回退**到写凭据；`/append` 完全不受影响。
+- 本地 sqld 没有鉴权，值写 `{"personal":{"authToken":""},"work":{"authToken":""}}` 即可（条目必须存在）。
+- 轮换写入后重新 `wrangler deploy --env <env>`（见第 8.4 节）。
+
 `SERVICE_VERSION` 是普通变量，写在 `packages/worker/wrangler.toml` 的 `[env.dev.vars]` / `[env.prod.vars]` 里，
 `GET /health` 会返回它，用来确认部署的确是新版本。
 
@@ -129,12 +152,27 @@ npx wrangler deploy --env prod
 
 ```bash
 curl https://liushui-mem-dev.<subdomain>.workers.dev/health
-# → {"ok":true,"version":"0.1.0-dev"}
+# → {"ok":true,"version":"0.2.0-dev"}
 
 # 未授权必须被拒绝：
 curl -i -X POST https://liushui-mem-dev.<subdomain>.workers.dev/append -d '{}'
 # → 401 {"error":{"code":"unauthorized",...}}
+
+# 只读查询：
+curl -s -X POST https://liushui-mem-dev.<subdomain>.workers.dev/sql \
+  -H 'authorization: Bearer <PERSONAL_TOKEN>' -H 'content-type: application/json' \
+  -d '{"sql":"SELECT COUNT(*) AS n FROM memories"}'
+# → 200 {"vault":"personal","columns":["n"],"rows":[[...]],"truncated":{"rows":false,"cells":0},"stats":{...}}
+
+# 写语句必须被拒绝且记录数不变：
+curl -s -X POST https://liushui-mem-dev.<subdomain>.workers.dev/sql \
+  -H 'authorization: Bearer <PERSONAL_TOKEN>' -H 'content-type: application/json' \
+  -d '{"sql":"DELETE FROM memories"}'
+# → 400 {"error":{"code":"statement_not_allowed",...}}
 ```
+
+用 CLI 冒烟更方便：`liushui sql "SELECT id, ts FROM memories ORDER BY ts DESC LIMIT 5"`；
+截断提示只会写到 stderr。
 
 ## 6. 新机器上的 CLI 配置
 
@@ -241,6 +279,17 @@ node packages/cli/bin/liushui.ts append "轮换验证"
 重试与轮换期间不会有重复记录：`id` 由内容决定，追加是「若不存在则插入」。
 同一个 `ts` 与 `id` 重复提交只会命中既有记录，并返回 `created:false`。
 
+### 8.4 轮换只读凭据（与 client token 轮换互不牵连）
+
+只读凭据按**库名**记录在 `LIUSHUI_VAULT_READ_CREDS` 里，与 `LIUSHUI_VAULT_TOKENS` 中的 client token 无关：
+
+1. `turso db tokens create <db> --read-only` 生成新的只读凭据（旧的仍有效）。
+2. 更新 `LIUSHUI_VAULT_READ_CREDS` 中该库的 `authToken`，写入 secret 并重新部署。
+3. 用 `liushui sql` 验证查询仍然成功。
+4. `turso db tokens invalidate <db> --all-but-this-one` 失效旧凭据，再次验证。
+
+轮换 client token（8.1）**不需要**动这个 secret：轮换窗口里的多个 client token 指向同一个库，共用同一份只读凭据。
+
 ## 9. 排障
 
 | 现象 | 原因 | 处理 |
@@ -251,5 +300,10 @@ node packages/cli/bin/liushui.ts append "轮换验证"
 | `/append` 返回 401 | token 未配置到该环境 | 确认 CLI 用的配置文件与环境，以及 `LIUSHUI_VAULT_TOKENS` 中的 key |
 | `/append` 返回 403 `vault_mismatch` | 请求体里的 `vault` 与 token 绑定的库不同 | 用该库自己的 token，或去掉请求体的 `vault` 字段 |
 | `/append` 返回 413 `content_too_large` | `content` 超过 `LIUSHUI_MAX_CONTENT_BYTES` | 截断内容或调整上限 |
+| `/sql` 返回 500 `server_misconfigured` | `LIUSHUI_VAULT_READ_CREDS` 缺失、损坏，或该库没有条目 | 检查 secret（只允许 `authToken`，不含 `url`），重新写入并部署（3.1 / 8.4） |
+| `/sql` 返回 503 `storage_unavailable` | 只读凭据失效或库不可达 | 检查只读 token；必要时轮换（8.4） |
+| `/sql` 返回 400 `statement_not_allowed` | 提交了写语句、DDL、`PRAGMA` 或多条语句 | 只提交单条 `SELECT` / `WITH … SELECT` / `EXPLAIN QUERY PLAN` |
+| `/sql` 返回 400 `sql_error` | SQL 语法错误、未知表或列 | 按错误描述修正语句 |
+| `/sql` 返回 504 `query_timeout` | 查询超过服务端 5s 超时 | 缩小查询范围或加索引（后续 change） |
 | CLI 报「未找到配置文件」 | 未创建配置或未设置 `LIUSHUI_CONFIG` | 见第 6 节 |
 | 迁移报 `schema 已是最新` 但仍无表 | 连到了错误的数据库 | 用 `turso db shell <db> '.tables'` 确认 |

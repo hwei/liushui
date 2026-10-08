@@ -12,6 +12,7 @@ import type { Meta } from '@liushui/core';
 
 import type { ResolvedVault } from './config.ts';
 import { scrubSecrets } from './errors.ts';
+import type { QueryResponse } from './query-format.ts';
 
 /** 发往 Worker 的一条记录（received_at / schema_v 由服务端补）。 */
 export interface AppendPayload {
@@ -139,6 +140,104 @@ export async function postAppend(
   }
 
   // 循环必然在上面 return，这里只是让类型收敛。
+  return {
+    ok: false,
+    kind: 'network',
+    status: null,
+    code: null,
+    message: '未知错误',
+    attempts: maxAttempts,
+  };
+}
+
+/** 发往 Worker 的一条只读查询。 */
+export interface SqlPayload {
+  sql: string;
+  args: readonly string[];
+  limit: number;
+}
+
+/** 查询失败的分类。`timeout` 单独一类，因为 504 不可重试。 */
+export type SqlFailureKind = 'client' | 'server' | 'network' | 'timeout';
+
+export interface SqlSuccess {
+  ok: true;
+  response: QueryResponse;
+  attempts: number;
+}
+
+export interface SqlFailure {
+  ok: false;
+  kind: SqlFailureKind;
+  status: number | null;
+  code: string | null;
+  message: string;
+  attempts: number;
+}
+
+export type SqlOutcome = SqlSuccess | SqlFailure;
+
+/**
+ * 在某个库上执行只读查询。
+ *
+ * 只对网络错误与 503（存储不可用）重试；`sql_error` / `statement_not_allowed` /
+ * `query_timeout` / 401 / 403 与其余 4xx/5xx 一律不重试。
+ */
+export async function postSql(
+  vault: ResolvedVault,
+  payload: SqlPayload,
+  options: PostAppendOptions = {},
+): Promise<SqlOutcome> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const maxAttempts = options.maxAttempts ?? 3;
+  const baseDelayMs = options.baseDelayMs ?? 250;
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const sleep = options.sleep ?? defaultSleep;
+  const scrub = (text: string): string => scrubSecrets(text, [vault.token]);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetchImpl(`${vault.url}/sql`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${vault.token}`,
+        },
+        body: JSON.stringify({ sql: payload.sql, args: payload.args, limit: payload.limit }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (response.ok) {
+        const body = (await response.json()) as QueryResponse;
+        return { ok: true, response: body, attempts: attempt };
+      }
+
+      const errorBody = await readErrorBody(response);
+      const code = errorBody.error?.code ?? null;
+      const kind: SqlFailureKind =
+        response.status === 504 ? 'timeout' : response.status >= 500 ? 'server' : 'client';
+      // 保留服务端给出的描述（SQL 错误对调用方有用）；没有时退回状态码。
+      const message = scrub(
+        errorBody.error?.message ?? `查询失败 ${response.status}${code ? ` (${code})` : ''}`,
+      );
+
+      const retryable = response.status === 503;
+      if (retryable && attempt < maxAttempts) {
+        await sleep(baseDelayMs * 2 ** (attempt - 1));
+        continue;
+      }
+      return { ok: false, kind, status: response.status, code, message, attempts: attempt };
+    } catch (error) {
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      const message = scrub(`网络错误：${detail}`);
+      if (attempt < maxAttempts) {
+        await sleep(baseDelayMs * 2 ** (attempt - 1));
+        continue;
+      }
+      return { ok: false, kind: 'network', status: null, code: null, message, attempts: attempt };
+    }
+  }
+
   return {
     ok: false,
     kind: 'network',

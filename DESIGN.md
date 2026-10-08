@@ -49,15 +49,15 @@ meta 由 CLI 自动采集，不依赖 agent 手填。
 ## 接口
 
 ### CLI
-- `liushui append [--vault ...] [--kind ...] [--file x.png] "文本"`：追加记忆，附件由 CLI 上传 R2
-- `liushui sql "<SELECT ...>"`：只读查询
+- `liushui append [--vault ...] [--kind ...] "文本"`：追加记忆（已实现；`--file` 附件上传未实现）
+- `liushui sql "<SELECT ...>"`：只读查询（已实现，见 `openspec/specs/memory-query/`）
 
 输出默认紧凑格式（JSONL/TSV），限制行数与字段长度，避免撑爆 agent 上下文。
 
 ### SQL 查询
-- 只读连接，强制 LIMIT 与超时
-- 写入不走 SQL，只走 append
-- 语义检索通过 `embed('文本')` 宏：服务端预处理，把它替换为向量参数后再执行
+- 只读连接，强制 LIMIT 与超时（已实现：只读凭据 + 执行层永不提交 + 单语句检查；行数/单元格/响应大小上限与超时）
+- 写入不走 SQL，只走 append（已实现）
+- 语义检索通过 `embed('文本')` 宏：**尚未实现**（属后续 change，与 FTS5 一起做）；下面这段只是目标形态
 
 ```sql
 SELECT m.id, m.ts, m.author, m.content

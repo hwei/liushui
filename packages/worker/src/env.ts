@@ -25,6 +25,11 @@ export interface Env {
   SERVICE_VERSION?: string;
   /** JSON：{ "<token>": { "vault": string, "url": string, "authToken"?: string } } */
   LIUSHUI_VAULT_TOKENS: string;
+  /**
+   * JSON：{ "<vault>": { "authToken": string } }，只读查询用的库凭据。
+   * 与 LIUSHUI_VAULT_TOKENS 分开存放；只在 /sql 路径解析。
+   */
+  LIUSHUI_VAULT_READ_CREDS?: string;
   /** 可选的 content 上限（UTF-8 字节）。 */
   LIUSHUI_MAX_CONTENT_BYTES?: string;
   /** 可选的 schema 版本覆盖（默认取 core 的 SCHEMA_VERSION）。 */
@@ -84,7 +89,60 @@ export function parseVaultTokens(raw: string | undefined): VaultEntry[] {
     entries.push({ token, vault, url, authToken: authToken ?? '' });
   }
   if (entries.length === 0) throw new ConfigError('LIUSHUI_VAULT_TOKENS 未配置任何库');
+
+  // 同一个库名必须对应同一个 url；否则只读查询会选错数据库。
+  const urlByVault = new Map<string, string>();
+  for (const entry of entries) {
+    const known = urlByVault.get(entry.vault);
+    if (known !== undefined && known !== entry.url) {
+      throw new ConfigError(`LIUSHUI_VAULT_TOKENS 中库 ${entry.vault} 对应了多个 url`);
+    }
+    urlByVault.set(entry.vault, entry.url);
+  }
   return entries;
+}
+
+/** 一个库的只读凭据。 */
+export interface ReadCred {
+  /** Turso 只读 token；本地 sqld 可为空串（但条目本身必须存在）。 */
+  authToken: string;
+}
+
+/**
+ * 解析 `LIUSHUI_VAULT_READ_CREDS`（按库名索引）。
+ *
+ * - 缺失或空串：返回空表（不报错）——查询时找不到条目再返回 `server_misconfigured`。
+ * - 结构非法、含 `url`（或 `authToken` 以外的键）、`authToken` 不是字符串：抛 `ConfigError`。
+ * - 返回的对象不包含任何 url，避免查询被路由到另一个数据库。
+ */
+export function parseVaultReadCreds(raw: string | undefined): Record<string, ReadCred> {
+  if (!raw || raw.trim() === '') return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ConfigError('LIUSHUI_VAULT_READ_CREDS 不是合法 JSON');
+  }
+  if (!isRecord(parsed)) {
+    throw new ConfigError('LIUSHUI_VAULT_READ_CREDS 必须是 { vault: { authToken } } 形式的对象');
+  }
+
+  const creds: Record<string, ReadCred> = {};
+  for (const [vault, value] of Object.entries(parsed)) {
+    if (vault.length === 0) throw new ConfigError('LIUSHUI_VAULT_READ_CREDS 含空库名');
+    if (!isRecord(value)) throw new ConfigError('LIUSHUI_VAULT_READ_CREDS 的每一项必须是对象');
+    for (const key of Object.keys(value)) {
+      if (key !== 'authToken') {
+        throw new ConfigError(`LIUSHUI_VAULT_READ_CREDS 的库 ${vault} 不允许出现字段 ${key}`);
+      }
+    }
+    const { authToken } = value;
+    if (typeof authToken !== 'string') {
+      throw new ConfigError(`LIUSHUI_VAULT_READ_CREDS 的库 ${vault} 需要字符串 authToken`);
+    }
+    creds[vault] = { authToken };
+  }
+  return creds;
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {

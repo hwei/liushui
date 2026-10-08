@@ -12,7 +12,8 @@ export type ValidationErrorCode =
   | 'invalid_field'
   | 'content_too_large'
   | 'invalid_meta'
-  | 'id_mismatch';
+  | 'id_mismatch'
+  | 'statement_not_allowed';
 
 /** 表示输入不合法；`field` 指向出问题的字段（若可定位）。 */
 export class ValidationError extends Error {

@@ -41,12 +41,15 @@
 
 | 层 | 机制 | 起作用的环境 | 职责 |
 |---|---|---|---|
-| 1 | Turso 只读 token（`turso db tokens create <db> --read-only`） | dev/prod | **权威**：即使上面两层都被绕过，也写不进去 |
-| 2 | 在只读事务里执行（`BEGIN TRANSACTION READONLY`） | 云端、本地 sqld 与本地文件库 | 兜底，同时让本地测试能覆盖“执行层阻止写入”这一条 |
+| 1 | Turso 只读 token（`turso db tokens create <db> --read-only`） | dev/prod | **权威**：写入被服务端拒绝（实测 `SQL write operations are forbidden`） |
+| 2 | 执行层兜底：本地文件库用连接级 `PRAGMA query_only = ON`；方案 A 的事务里执行语句且**从不提交**（`BEGIN TRANSACTION READONLY` → 语句 → `ROLLBACK`），并在 `rows_written > 0` 时判为只读违规 | 全部 | 兜底，同时让本地测试能覆盖“执行层阻止写入”这一条 |
 | 3 | 语句检查（core 里的纯函数） | 全部 | 友好地报出 `statement_not_allowed`，并拒绝多语句 |
 
 - 第 3 层的做法：跳过注释与空白，按引号、注释感知地扫描分号，只允许一条语句；首个关键字必须是 `SELECT`、`WITH` 或 `EXPLAIN QUERY PLAN`（大小写不敏感）。它**不**负责安全：`WITH … DELETE` 能通过这一层，由第 1、2 层拦住。spec 的「执行层兜底阻止写入」场景就是用来固定这一点的。
-- 第 2 层在本地文件库上是否支持 `BEGIN TRANSACTION READONLY`，由任务 1.1 实测。如果不支持，改为在同一个 batch 里先执行 `PRAGMA query_only = ON`。两种方式对外行为相同，spec 不受影响。
+- **任务 1.1 实测结论（2026-10-08）**：`batch([...], "read")`（即 `BEGIN TRANSACTION READONLY`）在**本地文件库、本地 sqld 与 dev Turso 上都不阻止写入**——写语句会照常执行。`PRAGMA query_only = ON` 在本地文件库上有效（`SQLITE_READONLY`），但本地 sqld/Turso 不解析它（`SQL_PARSE_ERROR: unsupported statement`）。因此第 2 层按后端分开：
+  - 本地文件库执行器（单元测试）：连接后先 `PRAGMA query_only = ON`，写语句直接抛错。
+  - 方案 A（Hrana pipeline）：`BEGIN TRANSACTION READONLY` 仅作意图声明；真正的执行层保证是**在同一次 pipeline 请求内永不提交**——`BEGIN TRANSACTION READONLY`、语句、`ROLLBACK` 顺序发出，实测 INSERT 后 ROLLBACK 记录数不变（本地 sqld `rows_written=2`、dev Turso `rows_written=4`），并把 `rows_written > 0` 视为越权写入。这样即使只读 token 被误配成写 token，写入也不会落库。
+  - 方案 B 的 `batch(..., "read")` 会提交事务（实测写语句落库），因此**不能**作为执行层兜底；只作本地/兜底执行器时，必须叠加 `PRAGMA query_only` 或改为事务+回滚。
 - 备选方案：只靠语句检查。放弃，原因是 SQLite 的语法面太大（`WITH` 后接 DML、`ATTACH`、各种函数副作用），而且安全不应该依赖解析器。
 
 ### 3. 用包裹 LIMIT 来限行数，多取一行来判断截断
@@ -58,15 +61,19 @@
 - 代价：结果中有重名列时，SQLite 会在子查询里把它们改名（如 `id:1`）。这对 JSONL 输出反而是好事（键不会冲突），在 skill 里说明即可。
 - 默认值（代码常量）：默认 50 行，最多 500 行；单元格最多 2000 个字符；响应体最大 1 MiB（超出时按行截断）；超时 5 s。CLI 默认 `--limit 50`、`--max-width 200`（在服务端截断之外再收一层显示宽度）。
 
-### 4. 执行器抽象，`rows_read` 的取法由 spike 决定
+### 4. 执行器抽象，采用方案 A 取 `rows_read`
 
 `HandlerDeps` 新增 `createQueryExecutor(binding, readCreds)`，返回 `execute(sql, args, { timeoutMs }) → { columns, rows, rowsRead? }`。handler 不关心底层是怎么实现的。
 
-- **方案 A（倾向）**：直接 `fetch` Turso 的 Hrana HTTP pipeline（`libsql://` 换成 `https://`），一次请求里依次执行 `BEGIN TRANSACTION READONLY`、语句、`ROLLBACK`、`close`。好处是能拿到 `rows_read`，而且可以用 `AbortSignal` 真正取消 HTTP 请求。
-- **方案 B（兜底）**：沿用 `@libsql/client` 的 `batch([...], "read")`，拿不到 `rows_read`，超时只能用 `Promise.race`（后端可能还在继续执行）。
-- 任务 1.2 的 spike 在 dev 的 Turso 上实测：(a) Hrana 响应里有没有 `rows_read`；(b) 只读 token 加 READONLY 事务的组合是否可用。结论写回本节。spec 只要求“后端报告时返回”，所以两种方案都满足 spec。
-- 本地测试（Node + 文件库）始终走方案 B 的执行器。方案 A 由 `test:worker-integration`（本地 sqld，同样说 Hrana）覆盖。
-- **`EXPLAIN` 预检**：默认**不做**。现在数据量很小，免费额度很宽，预检还会把每次查询的请求数翻倍。spike 会对 `SELECT * FROM memories` 这类全表扫描实测 `rows_read`，把“记多少条以后需要预检”的判断写回本节，留给后续 change。
+- **选定方案 A**：直接 `fetch` Turso 的 Hrana HTTP pipeline（`libsql://` 换成 `https://`），一次请求里依次执行 `BEGIN TRANSACTION READONLY`、语句、`ROLLBACK`、`close`。好处是能拿到 `rows_read`，而且可以用 `AbortSignal` 真正取消 HTTP 请求。
+- **方案 B（兜底，仅本地文件库测试执行器）**：沿用 `@libsql/client`，连接级 `PRAGMA query_only = ON`。拿不到 `rows_read`，超时只能用 `Promise.race`（后端可能还在继续执行）。
+- **任务 1.2 实测结论（2026-10-08，dev `liushui-personal-dev`）**：
+  - (a) `turso db tokens create liushui-personal-dev --read-only` 生成的 token 执行 `INSERT` / `DELETE` 以及 `batch(..., "read")` 中的 `INSERT` 都被服务端拒绝：`SQL write operations are forbidden (current session doesn't have write permission)`，库内记录数不变。
+  - (b) 直接 `fetch` Hrana pipeline 的语句结果**带有** `rows_read`、`rows_written` 与 `query_duration_ms`（`https://<db>.turso.io/v2/pipeline`，`{ requests: [{type:"execute",stmt:{sql}}, {type:"close"}] }`）。
+  - (c) `SELECT * FROM memories LIMIT 5` → `rows_read=5`；`SELECT * FROM memories`（当时 7 条）→ `rows_read=7`、`query_duration_ms≈2.2`。即全表扫描的 `rows_read` 约等于记录数。
+  - 只读 token 与 READONLY 事务的组合可用；只要用只读 token，事务内的写语句在服务端就被拒。
+- 本地测试（Node + 文件库）走方案 B 的执行器（连接级 `PRAGMA query_only`）。方案 A 由 `test:worker-integration`（本地 sqld，同样说 Hrana）覆盖。
+- **`EXPLAIN` 预检**：默认**不做**。实测全表扫描的 `rows_read ≈ 记录数`；dev 库当时 7 条，一次全表扫描消耗 7 行。按免费额度（每月数亿行量级）估算，单次全表扫描要到约 10^5–10^6 条记录、且查询频次较高时才值得用 `EXPLAIN QUERY PLAN` 预检；当前数据量下预检只会把每次查询的请求数翻倍。该阈值留给后续 change 结合真实用量决定。
 
 ### 5. 错误映射
 
@@ -142,4 +149,4 @@
 ## Open Questions
 
 - 默认上限（50/500 行、2000 字符、1 MiB、5 s）是先拍定的值，可以在真实使用后调整，不影响 spec。
-- 记多少条以后需要 `EXPLAIN` 预检或派生索引：由 spike 给出初步数字，最终在 FTS 或后续 change 中决定。
+- 记多少条以后需要 `EXPLAIN` 预检或派生索引：spike 已给出初步判断（见 Decision 4：约 10^5–10^6 条），最终在 FTS 或后续 change 中结合真实用量决定。

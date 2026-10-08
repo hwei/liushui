@@ -7,8 +7,10 @@ import {
   WORK_TOKEN,
   appendRequest,
   callAppend,
+  callSql,
   createTestContext,
   makeAppendBody,
+  seedMemories,
   type TestContext,
 } from './helpers.ts';
 import { handleRequest } from '../src/app.ts';
@@ -69,6 +71,27 @@ describe('按库路由与隔离（task 4.5）', () => {
     expect(personal.body['id']).toBe(work.body['id']);
     expect(await countMemories(ctx.vaults['personal']!.client)).toBe(1);
     expect(await countMemories(ctx.vaults['work']!.client)).toBe(1);
+  });
+
+  it('个人库 token 查询只看到个人库记录（/sql）', async () => {
+    await seedMemories(ctx.vaults['personal']!.client, 2, 'personal');
+    await seedMemories(ctx.vaults['work']!.client, 3, 'work');
+
+    const personal = await callSql(ctx, { sql: 'SELECT id FROM memories' }, PERSONAL_TOKEN);
+    expect(personal.status).toBe(200);
+    expect(personal.body.rows).toHaveLength(2);
+    expect(personal.body.rows?.every((row) => String(row[0]).startsWith('personal-'))).toBe(true);
+
+    const work = await callSql(ctx, { sql: 'SELECT id FROM memories' }, WORK_TOKEN);
+    expect(work.body.rows).toHaveLength(3);
+    expect(work.body.rows?.every((row) => String(row[0]).startsWith('work-'))).toBe(true);
+  });
+
+  it('个人库 token 查询显式指定公司库被拒（/sql）', async () => {
+    await seedMemories(ctx.vaults['work']!.client, 1, 'work');
+    const denied = await callSql(ctx, { sql: 'SELECT id FROM memories', vault: 'work' }, PERSONAL_TOKEN);
+    expect(denied.status).toBe(403);
+    expect(denied.body).toMatchObject({ error: { code: 'vault_mismatch' } });
   });
 
   it('不提供任何修改或删除既有记录的接口（memory-ledger: 不存在改写路径）', async () => {

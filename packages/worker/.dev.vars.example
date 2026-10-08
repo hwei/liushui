@@ -6,4 +6,7 @@
 #   url       —— libSQL/Turso 地址；本地 sqld 用 http://127.0.0.1:8080
 #   authToken —— Turso 凭据；本地 sqld 留空
 LIUSHUI_VAULT_TOKENS={"local-personal-token":{"vault":"personal","url":"http://127.0.0.1:8080","authToken":""},"local-work-token":{"vault":"work","url":"http://127.0.0.1:8081","authToken":""}}
-SERVICE_VERSION=0.1.0-dev
+# 只读查询凭据，按库名索引（不含 url）。本地 sqld 没有鉴权，authToken 留空；
+# Turso 上用 `turso db tokens create <db> --read-only` 生成后填入。
+LIUSHUI_VAULT_READ_CREDS={"personal":{"authToken":""},"work":{"authToken":""}}
+SERVICE_VERSION=0.2.0-dev

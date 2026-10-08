@@ -30,6 +30,7 @@ export function createIo(options: IoOptions = {}): CapturedIo {
     env: options.env ?? {},
     cwd: options.cwd ?? process.cwd(),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.readStdin !== undefined ? { readStdin: options.readStdin } : {}),
     ...(options.now !== undefined ? { now: options.now } : {}),
     ...(options.runGit !== undefined ? { runGit: options.runGit } : {}),
     ...(options.hostname !== undefined ? { hostname: options.hostname } : {}),

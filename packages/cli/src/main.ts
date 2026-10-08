@@ -1,12 +1,13 @@
 /**
- * `mem` 命令行入口：参数解析、调用追加逻辑、输出与退出码。
+ * `liushui` 命令行入口：参数解析、调用追加/查询逻辑、输出与退出码。
  *
  * 输出约定（便于人和 agent 解析）：
- * - 单库成功：stdout 只输出 `id`（一行）。
- * - 多库：stdout 输出 JSONL，每个库一行 `{"vault","ok","id","created":...}`。
+ * - append 单库成功：stdout 只输出 `id`（一行）。
+ * - append 多库：stdout 输出 JSONL，每个库一行 `{"vault","ok","id","created":...}`。
+ * - sql：stdout 为带表头的 TSV（`--json` 时为 JSONL），截断提示只写 stderr。
  * - 失败：单库写 stderr；多库把失败也写进 JSONL。任何库失败时退出码为 1。
  *
- * 退出码：0 成功；1 写入失败；2 用法或配置错误。
+ * 退出码：0 成功；1 执行失败；2 用法或配置错误。
  *
  * 所有写出的文本都会再次清洗 token（最后一道防线）。
  */
@@ -15,6 +16,7 @@ import type { GitRunner } from './meta.ts';
 import { runAppend } from './append.ts';
 import { readConfiguredTokens } from './config.ts';
 import { CliError, scrubSecrets } from './errors.ts';
+import { DEFAULT_SQL_LIMIT, DEFAULT_SQL_MAX_WIDTH, runSqlCommand } from './sql.ts';
 import { CLI_VERSION } from './version.ts';
 
 export interface CliIo {
@@ -22,6 +24,8 @@ export interface CliIo {
   stderr(text: string): void;
   env: Record<string, string | undefined>;
   cwd: string;
+  /** `liushui sql -` 从标准输入读取 SQL；默认读 process.stdin。 */
+  readStdin?: () => Promise<string>;
   fetchImpl?: typeof fetch;
   now?: () => Date;
   runGit?: GitRunner;
@@ -33,39 +37,69 @@ export interface CliIo {
 
 const USAGE = `用法：
   liushui append [--vault <name>]... [--kind <kind>] [--config <path>] [--env <name>] <内容...>
+  liushui sql [--vault <name>] [--json] [--limit N] [--max-width N] [--arg V]... <SQL | ->
   liushui --version
   liushui --help
 
 示例：
   liushui append "修复了 iOS 渲染问题"
-  liushui append --vault personal --vault work --kind note "同一条记忆写入两个库"
+  liushui sql "SELECT id, kind FROM memories ORDER BY ts DESC LIMIT 5"
+  echo "SELECT COUNT(*) FROM memories" | liushui sql -
 
 说明：
   --vault 可重复，也可用逗号分隔（--vault personal,work）；省略时使用配置中的默认库。
   --kind 省略时默认 note。
+  sql 一次只查一个库（--vault 至多一个）；默认输出带表头的 TSV，--json 输出 JSONL。
+  sql 的 --limit 默认 ${DEFAULT_SQL_LIMIT}，--max-width 默认 ${DEFAULT_SQL_MAX_WIDTH}；--arg 可重复，作为位置参数传给 SQL。
   token 只从配置文件读取，不会出现在输出与日志中。
 `;
 
 interface ParsedArgs {
-  command: 'append' | 'help' | 'version';
+  command: 'append' | 'sql' | 'help' | 'version';
+  // append
   vaultNames: string[];
   kind: string;
   content: string;
+  // sql
+  sqlText: string;
+  useStdin: boolean;
+  sqlArgs: string[];
+  json: boolean;
+  limit: number | undefined;
+  maxWidth: number | undefined;
+  // shared
   configPath: string | undefined;
   envName: string | undefined;
 }
 
-function parseArgs(argv: readonly string[]): ParsedArgs {
-  const result: ParsedArgs = {
+function emptyArgs(): ParsedArgs {
+  return {
     command: 'help',
     vaultNames: [],
     kind: 'note',
     content: '',
+    sqlText: '',
+    useStdin: false,
+    sqlArgs: [],
+    json: false,
+    limit: undefined,
+    maxWidth: undefined,
     configPath: undefined,
     envName: undefined,
   };
+}
 
-  let index = 0;
+function parsePositiveInt(flag: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new CliError(`${flag} 需要一个正整数，得到 ${value}\n\n${USAGE}`);
+  }
+  return parsed;
+}
+
+function parseArgs(argv: readonly string[]): ParsedArgs {
+  const result = emptyArgs();
+
   const first = argv[0];
   if (first === undefined || first === '--help' || first === '-h' || first === 'help') {
     result.command = 'help';
@@ -75,12 +109,12 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     result.command = 'version';
     return result;
   }
-  if (first !== 'append') {
+  if (first !== 'append' && first !== 'sql') {
     throw new CliError(`未知子命令：${first}\n\n${USAGE}`);
   }
-  result.command = 'append';
-  index = 1;
 
+  const command = first;
+  let index = 1;
   const positional: string[] = [];
   const takeValue = (flag: string, inline: string | undefined): string => {
     if (inline !== undefined) return inline;
@@ -89,6 +123,8 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     index += 1;
     return next;
   };
+  const inlineValue = (arg: string): string | undefined =>
+    arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : undefined;
 
   for (; index < argv.length; index += 1) {
     const arg = argv[index]!;
@@ -97,8 +133,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       break;
     }
     if (arg.startsWith('--vault')) {
-      const inline = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : undefined;
-      const value = takeValue('--vault', inline);
+      const value = takeValue('--vault', inlineValue(arg));
       result.vaultNames.push(
         ...value
           .split(',')
@@ -107,22 +142,38 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       );
       continue;
     }
-    if (arg.startsWith('--kind')) {
-      const inline = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : undefined;
-      const value = takeValue('--kind', inline);
-      if (value.trim() === '') throw new CliError('--kind 不能为空');
-      result.kind = value.trim();
-      continue;
-    }
     if (arg.startsWith('--config')) {
-      const inline = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : undefined;
-      result.configPath = takeValue('--config', inline);
+      result.configPath = takeValue('--config', inlineValue(arg));
       continue;
     }
     if (arg.startsWith('--env')) {
-      const inline = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : undefined;
-      result.envName = takeValue('--env', inline);
+      result.envName = takeValue('--env', inlineValue(arg));
       continue;
+    }
+    if (command === 'append') {
+      if (arg.startsWith('--kind')) {
+        const value = takeValue('--kind', inlineValue(arg));
+        if (value.trim() === '') throw new CliError('--kind 不能为空');
+        result.kind = value.trim();
+        continue;
+      }
+    } else {
+      if (arg === '--json') {
+        result.json = true;
+        continue;
+      }
+      if (arg.startsWith('--limit')) {
+        result.limit = parsePositiveInt('--limit', takeValue('--limit', inlineValue(arg)));
+        continue;
+      }
+      if (arg.startsWith('--max-width')) {
+        result.maxWidth = parsePositiveInt('--max-width', takeValue('--max-width', inlineValue(arg)));
+        continue;
+      }
+      if (arg.startsWith('--arg')) {
+        result.sqlArgs.push(takeValue('--arg', inlineValue(arg)));
+        continue;
+      }
     }
     if (arg === '--help' || arg === '-h') {
       result.command = 'help';
@@ -134,7 +185,21 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     positional.push(arg);
   }
 
-  result.content = positional.join(' ');
+  if (command === 'append') {
+    result.command = 'append';
+    result.content = positional.join(' ');
+    return result;
+  }
+
+  result.command = 'sql';
+  if (positional.includes('-')) {
+    if (positional.length !== 1) {
+      throw new CliError('`-` 必须单独使用（从标准输入读取 SQL）\n\n' + USAGE);
+    }
+    result.useStdin = true;
+  } else {
+    result.sqlText = positional.join(' ');
+  }
   return result;
 }
 
@@ -161,6 +226,12 @@ function formatMultiVaultReport(reports: Awaited<ReturnType<typeof runAppend>>['
     .join('\n');
 }
 
+async function readStdinDefault(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk as Uint8Array));
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 /** 执行一条 CLI 命令，返回退出码。 */
 export async function main(argv: readonly string[], io: CliIo): Promise<number> {
   let args: ParsedArgs;
@@ -185,6 +256,33 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
     if (args.command === 'version') {
       out(`${CLI_VERSION}\n`);
       return 0;
+    }
+
+    if (args.command === 'sql') {
+      const sql = args.useStdin ? await (io.readStdin ?? readStdinDefault)() : args.sqlText;
+      const result = await runSqlCommand(
+        {
+          sql,
+          vaultNames: args.vaultNames,
+          args: args.sqlArgs,
+          limit: args.limit ?? DEFAULT_SQL_LIMIT,
+          maxWidth: args.maxWidth ?? DEFAULT_SQL_MAX_WIDTH,
+          json: args.json,
+        },
+        {
+          env: io.env,
+          cwd: io.cwd,
+          ...(args.configPath !== undefined ? { configPath: args.configPath } : {}),
+          ...(args.envName !== undefined ? { envName: args.envName } : {}),
+          ...(io.fetchImpl !== undefined ? { fetchImpl: io.fetchImpl } : {}),
+          ...(io.sleep !== undefined ? { sleep: io.sleep } : {}),
+          ...(io.maxAttempts !== undefined ? { maxAttempts: io.maxAttempts } : {}),
+          ...(io.baseDelayMs !== undefined ? { baseDelayMs: io.baseDelayMs } : {}),
+        },
+      );
+      out(result.stdout);
+      err(result.stderr);
+      return result.exitCode;
     }
 
     const result = await runAppend(

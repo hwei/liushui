@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleRequest } from '../src/app.ts';
 import type { HandlerDeps } from '../src/app.ts';
-import { createTestContext, type TestContext } from './helpers.ts';
+import { createTestContext, unusedQueryExecutor, type TestContext } from './helpers.ts';
 
 describe('健康检查（task 4.4）', () => {
   let ctx: TestContext;
@@ -24,6 +24,7 @@ describe('健康检查（task 4.4）', () => {
       createClient: () => {
         throw new Error('健康检查不应访问数据库');
       },
+      createQueryExecutor: unusedQueryExecutor,
       now: () => new Date(),
     };
     const response = await handleRequest(

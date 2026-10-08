@@ -30,7 +30,7 @@ const SQDL_IMAGE = 'ghcr.io/tursodatabase/libsql-server:latest';
 
 const PERSONAL_TOKEN = 'it-personal-token';
 const WORK_TOKEN = 'it-work-token';
-const SERVICE_VERSION = '0.1.0-it';
+const SERVICE_VERSION = '0.2.0-it';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -94,6 +94,31 @@ async function append(
     body: JSON.stringify(payload),
   });
   return { status: response.status, body: (await response.json()) as AppendResponse['body'] };
+}
+
+interface SqlResponse {
+  status: number;
+  body: {
+    columns?: string[];
+    rows?: unknown[][];
+    stats?: { rows_read?: number; duration_ms?: number };
+    error?: { code?: string; message?: string };
+  };
+}
+
+async function sqlQuery(
+  baseUrl: string,
+  token: string | null,
+  body: Record<string, unknown>,
+): Promise<SqlResponse> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers['authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${baseUrl}/sql`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, body: (await response.json()) as SqlResponse['body'] };
 }
 
 async function countRows(client: Client): Promise<number> {
@@ -178,9 +203,11 @@ test(
           authToken: '',
         };
       }
+      const readCreds: Record<string, { authToken: string }> = {};
+      for (const runtime of runtimes) readCreds[runtime.name] = { authToken: '' };
       writeFileSync(
         join(workDir, '.dev.vars'),
-        `LIUSHUI_VAULT_TOKENS=${JSON.stringify(tokens)}\n`,
+        `LIUSHUI_VAULT_TOKENS=${JSON.stringify(tokens)}\nLIUSHUI_VAULT_READ_CREDS=${JSON.stringify(readCreds)}\n`,
       );
 
       const workerPort = await freePort();
@@ -279,6 +306,36 @@ test(
       const unauthorized = await append(baseUrl, null, payload);
       assert.equal(unauthorized.status, 401);
       assert.equal(unauthorized.body.error?.code, 'unauthorized');
+
+      // 8. 只读查询端点。
+      const query = await sqlQuery(baseUrl, PERSONAL_TOKEN, {
+        sql: 'SELECT id, kind FROM memories ORDER BY ts DESC',
+      });
+      assert.equal(query.status, 200, JSON.stringify(query.body));
+      assert.deepEqual(query.body.columns, ['id', 'kind']);
+      assert.equal(query.body.rows?.length, 1);
+      assert.equal(typeof query.body.stats?.rows_read, 'number', '本地 sqld 应报告 rows_read');
+
+      // 写语句被拒且记录数不变（语句检查 + 执行层不入库）。
+      const writeAttempt = await sqlQuery(baseUrl, PERSONAL_TOKEN, { sql: 'DELETE FROM memories' });
+      assert.equal(writeAttempt.status, 400);
+      assert.equal(writeAttempt.body.error?.code, 'statement_not_allowed');
+      assert.equal(await countRows(personal.client), 1);
+      assert.equal(await countRows(work.client), 1);
+
+      // SQL 错误是客户端错误，并可区分于存储错误。
+      const sqlError = await sqlQuery(baseUrl, PERSONAL_TOKEN, { sql: 'SELECT nope FROM memories' });
+      assert.equal(sqlError.status, 400);
+      assert.equal(sqlError.body.error?.code, 'sql_error');
+
+      // 跨库查询被拒。
+      const crossQuery = await sqlQuery(baseUrl, PERSONAL_TOKEN, { sql: 'SELECT 1', vault: 'work' });
+      assert.equal(crossQuery.status, 403);
+      assert.equal(crossQuery.body.error?.code, 'vault_mismatch');
+
+      // 未授权的查询。
+      const unauthorizedQuery = await sqlQuery(baseUrl, null, { sql: 'SELECT 1' });
+      assert.equal(unauthorizedQuery.status, 401);
     } finally {
       if (wrangler && wrangler.exitCode === null) {
         if (process.platform === 'win32' && wrangler.pid !== undefined) {

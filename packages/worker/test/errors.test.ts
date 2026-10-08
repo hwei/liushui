@@ -11,6 +11,7 @@ import {
   callAppend,
   createTestContext,
   makeAppendBody,
+  unusedQueryExecutor,
   type TestContext,
 } from './helpers.ts';
 
@@ -28,6 +29,7 @@ describe('错误语义（task 4.3）', () => {
       createClient: () => {
         throw new Error('connect ECONNREFUSED 127.0.0.1:8080 — turso-token-do-not-leak');
       },
+      createQueryExecutor: unusedQueryExecutor,
       now: () => new Date(),
     };
     const body = await makeAppendBody();
@@ -54,6 +56,7 @@ describe('错误语义（task 4.3）', () => {
     } as unknown as Client;
     const deps: HandlerDeps = {
       createClient: () => brokenClient,
+      createQueryExecutor: unusedQueryExecutor,
       now: () => new Date(),
     };
     const body = await makeAppendBody();
@@ -74,6 +77,7 @@ describe('错误语义（task 4.3）', () => {
       createClient: () => {
         throw new Error('down');
       },
+      createQueryExecutor: unusedQueryExecutor,
       now: () => new Date(),
     };
     const serverError = await callAppend(ctx, ok, PERSONAL_TOKEN, deps);

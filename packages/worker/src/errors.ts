@@ -19,6 +19,9 @@ export type ApiErrorCode =
   | 'vault_mismatch'
   | 'not_found'
   | 'method_not_allowed'
+  | 'statement_not_allowed'
+  | 'sql_error'
+  | 'query_timeout'
   | 'server_misconfigured'
   | 'storage_unavailable'
   | 'internal_error';
@@ -56,6 +59,40 @@ export class ApiError extends Error {
 /** 组装 JSON 响应。 */
 export function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+}
+
+/**
+ * 执行器抛出的查询错误：携带尚未清洗的数据库描述。
+ * handler 会先清洗（去掉 URL 与凭据）再转成 `ApiError`。
+ */
+export class QueryError extends Error {
+  readonly apiCode: ApiErrorCode;
+  readonly status: number;
+  readonly kind: ApiErrorKind;
+
+  constructor(
+    apiCode: ApiErrorCode,
+    status: number,
+    kind: ApiErrorKind,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'QueryError';
+    this.apiCode = apiCode;
+    this.status = status;
+    this.kind = kind;
+  }
+}
+
+/** 清洗数据库错误描述：抹掉凭据与 URL，并限制长度。 */
+export function sanitizeDbMessage(message: string, secrets: readonly string[]): string {
+  let out = message;
+  for (const secret of secrets) {
+    if (typeof secret === 'string' && secret.length >= 4) out = out.split(secret).join('***');
+  }
+  // URL / 主机名样式（scheme://…、方案 A 的 libsql://、wss://）。
+  out = out.replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"'`]+/gi, '<url>');
+  return out.length > 500 ? `${out.slice(0, 500)}…` : out;
 }
 
 /** 把 `ApiError` 转成响应；`details` 只包含字段名等非敏感信息。 */

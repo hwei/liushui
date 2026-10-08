@@ -2,20 +2,22 @@
 
 自进化记忆系统的**只追加记忆流水账**。总体设计见 [`DESIGN.md`](./DESIGN.md)。
 
-当前仓库实现的是最小可用内核 `core-append-store`：
+当前仓库实现的是最小可用内核：写入（`core-append-store`）与只读查询（`sql-query`）：
 
 ```
 liushui append  →  Cloudflare Worker（token 鉴权）  →  Turso / libSQL（每库一个独立数据库）
+liushui sql     →  POST /sql（只读凭据 + 只读事务）  →  单库只读查询
 ```
 
-本 change 只覆盖**文本的写入路径**。查询、FTS、向量、附件、提交页、反馈与维护流程都不在范围内。
+已实现文本的写入与只读查询。FTS、向量（`embed()`）、附件、提交页、反馈与维护流程都还不在范围内。
 
 ## 目录结构
 
 ```
-packages/core      共享内核：记录模型与校验、规范化与确定性 ID、迁移与幂等追加
-packages/worker    Cloudflare Worker：token 鉴权、按 token 路由到库、POST /append、GET /health
-packages/cli       `mem` 命令行：meta 自动采集与清洗、按库脱敏、多库提交、失败重试
+packages/core      共享内核：记录模型与校验、规范化与确定性 ID、迁移与幂等追加、只读查询的语句检查/包裹/整形
+packages/worker    Cloudflare Worker：token 鉴权、按 token 路由到库、POST /append、POST /sql、GET /health
+packages/cli       `liushui` 命令行：meta 自动采集与清洗、按库脱敏、多库提交、失败重试、只读查询与 TSV/JSONL 输出
+skills/liushui/    供所有项目的 agent 使用的记忆读写 skill（安装方式见下）
 scripts/migrate.ts 对某个库幂等执行迁移
 openspec/          OpenSpec change 与 spec（唯一的需求来源）
 ```
@@ -120,7 +122,45 @@ node packages/cli/bin/liushui.ts append --vault personal,work --kind note "同�
 
 也可以直接 `npx liushui …`（workspace bin 已链接）。
 
+### 5. 只读查询 `liushui sql`
+
+`liushui sql` 对一个库执行一条只读 SQL，默认输出带表头的 TSV：
+
+```bash
+node packages/cli/bin/liushui.ts sql "SELECT id, kind, ts FROM memories ORDER BY ts DESC LIMIT 5"
+# → id<TAB>kind<TAB>ts
+#   EXW2…<TAB>note<TAB>2026-10-08T07:47:08.479Z
+
+node packages/cli/bin/liushui.ts sql --json "SELECT json_extract(meta, '$.git.branch') AS branch FROM memories LIMIT 5"
+# → {"branch":"main"}
+
+echo "SELECT COUNT(*) AS n FROM memories" | node packages/cli/bin/liushui.ts sql -
+node packages/cli/bin/liushui.ts sql --arg note "SELECT id FROM memories WHERE kind = ? ORDER BY ts"
+```
+
+输出约定：
+
+- 默认 TSV，一行表头加若干行数据；单元格内的 `\`、制表符、换行与回车转义，NULL 输出为 `\N`。
+- `--json` 改为 JSONL，每行一个以列名为键的对象。
+- `--limit` 默认 50、`--max-width` 默认 200；截断提示只写 stderr，stdout 永远只有结果。
+- 行数超过上限、或单元格被截断时，服务端在响应里标记，CLI 额外在 stderr 提示。
+- 查询一次只针对一个库：`--vault` 至多一个，省略时用默认库。
+- 只有一条只读语句（`SELECT` / `WITH … SELECT` / `EXPLAIN QUERY PLAN`）被接受；写语句、DDL、`PRAGMA`、多条语句一律拒绝。
+- `sql_error`、`statement_not_allowed`、`query_timeout` 与 401/403 不重试；网络错误与 503 重试。
+
 **输出约定**：单库成功时 stdout 只有 `id`（便于 agent 解析）；多库时 stdout 是 JSONL，每库一行；失败写到 stderr，任何库失败退出码为 1；用法/配置错误退出码为 2。`--env dev|prod` 或 `LIUSHUI_ENV` 切换环境，配置文件里的 `env` 是默认值。
+
+### 6. Agent skill
+
+[`skills/liushui/SKILL.md`](./skills/liushui/SKILL.md) 说明何时写/查记忆、`memories` 表与 `json_extract` 用法、常用查询模板与截断提示。安装到 agent 的 skill 目录：
+
+```bash
+mkdir -p ~/.claude/skills
+cp -r skills/liushui ~/.claude/skills/liushui
+# 或软链：ln -s "$PWD/skills/liushui" ~/.claude/skills/liushui
+```
+
+以后改 schema 时要同步更新这个 skill（见 `DESIGN.md`）。
 
 ## 环境与 secrets 清单
 
@@ -134,6 +174,7 @@ node packages/cli/bin/liushui.ts append --vault personal,work --kind note "同�
 | 名称 | 必填 | 说明 |
 |---|---|---|
 | `LIUSHUI_VAULT_TOKENS` | 是 | JSON：`{ "<token>": { "vault": "personal", "url": "libsql://…", "authToken": "<Turso 凭据>" } }`，token 与库一一绑定 |
+| `LIUSHUI_VAULT_READ_CREDS` | `/sql` 必填 | JSON：`{ "<vault>": { "authToken": "<Turso 只读凭据>" } }`，按库名索引，只允许 `authToken`（含 `url` 即报错）。缺失时 `/sql` 返回 `server_misconfigured`，**绝不回退**到写凭据；`/append` 不受影响。本地 sqld 留空 `authToken` |
 | `LIUSHUI_MAX_CONTENT_BYTES` | 否 | `content` 上限（UTF-8 字节），默认 131072 |
 | `LIUSHUI_SCHEMA_V` | 否 | 覆盖写入的 `schema_v`，默认取 `@liushui/core` 的 `SCHEMA_VERSION` |
 
@@ -158,6 +199,7 @@ node packages/cli/bin/liushui.ts append --vault personal,work --kind note "同�
 - 总体设计：[`DESIGN.md`](./DESIGN.md)
 - 部署与 token 轮换：[`docs/deploy.md`](./docs/deploy.md)
 - 需求与验收标准：[`openspec/`](./openspec)（spec 是唯一需求来源）
+- Agent skill：[`skills/liushui/SKILL.md`](./skills/liushui/SKILL.md)
 
 ## 常见问题
 

@@ -51,6 +51,7 @@ export async function startLocalWorker(): Promise<LocalWorker> {
     LIUSHUI_VAULT_TOKENS: JSON.stringify({
       [token]: { vault: 'personal', url: dbUrl, authToken: '' },
     }),
+    LIUSHUI_VAULT_READ_CREDS: JSON.stringify({ personal: { authToken: '' } }),
   };
 
   let failures = 0;
@@ -83,6 +84,23 @@ export async function startLocalWorker(): Promise<LocalWorker> {
 
       const response = await handleRequest(request, env, {
         createClient: () => client,
+        createQueryExecutor: () => ({
+          // 文件库查询执行器：连接级 PRAGMA query_only。
+          async execute(sql, args) {
+            const queryClient = createClient({ url: dbUrl });
+            try {
+              await queryClient.execute('PRAGMA query_only = ON');
+              const result = await queryClient.execute({ sql, args: [...args] });
+              const columns = result.columns;
+              const rows = result.rows.map((row) =>
+                columns.map((name) => (row as unknown as Record<string, unknown>)[name]),
+              );
+              return { columns, rows };
+            } finally {
+              queryClient.close();
+            }
+          },
+        }),
         now: () => new Date('2026-10-08T07:47:09.000Z'),
       });
 
