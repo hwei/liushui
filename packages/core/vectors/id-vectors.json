@@ -1,0 +1,100 @@
+{
+  "$comment": "记忆 ID 的跨语言兼容基准。任何语言的客户端实现都必须算出相同结果。修改这些期望值等于变更 ID 规则，需要新的 schema_v，见 packages/core/vectors/README.md。",
+  "idRule": {
+    "algorithm": "base32(sha256(canonicalIdInput)[0..16])",
+    "base32": "RFC 4648，大写字母表 ABCDEFGHIJKLMNOPQRSTUVWXYZ234567，无填充",
+    "canonicalIdInput": "递归按键排序的确定性 JSON 序列化；ts 归一为 UTC 毫秒精度 ISO 字符串；attachments 为空数组时也必须出现（作为空数组）"
+  },
+  "vectors": [
+    {
+      "name": "basic",
+      "input": {
+        "ts": "2026-10-08T07:47:08.479Z",
+        "author": "will",
+        "kind": "note",
+        "content": "修复了 iOS 渲染问题"
+      },
+      "canonical": "{\"attachments\":[],\"author\":\"will\",\"content\":\"修复了 iOS 渲染问题\",\"kind\":\"note\",\"ts\":\"2026-10-08T07:47:08.479Z\"}",
+      "sha256": "d58644c87a5720155c8851beae88d62445b616d65e01fc88f17fb711fdb1977e",
+      "id": "2WDEJSD2K4QBKXEIKG7K5CGWEQ"
+    },
+    {
+      "name": "ts-timezone-offset-is-equivalent",
+      "input": {
+        "ts": "2026-10-08T15:47:08.479+08:00",
+        "author": "will",
+        "kind": "note",
+        "content": "修复了 iOS 渲染问题"
+      },
+      "canonical": "{\"attachments\":[],\"author\":\"will\",\"content\":\"修复了 iOS 渲染问题\",\"kind\":\"note\",\"ts\":\"2026-10-08T07:47:08.479Z\"}",
+      "id": "2WDEJSD2K4QBKXEIKG7K5CGWEQ"
+    },
+    {
+      "name": "content-differs-by-one-char",
+      "input": {
+        "ts": "2026-10-08T07:47:08.479Z",
+        "author": "will",
+        "kind": "note",
+        "content": "修复了 iOS 渲染问题。"
+      },
+      "canonical": "{\"attachments\":[],\"author\":\"will\",\"content\":\"修复了 iOS 渲染问题。\",\"kind\":\"note\",\"ts\":\"2026-10-08T07:47:08.479Z\"}",
+      "id": "QZL23TS3AAQRX6INVDZNFJBPYA"
+    },
+    {
+      "name": "kind-differs",
+      "input": {
+        "ts": "2026-10-08T07:47:08.479Z",
+        "author": "will",
+        "kind": "retrieval_feedback",
+        "content": "修复了 iOS 渲染问题"
+      },
+      "canonical": "{\"attachments\":[],\"author\":\"will\",\"content\":\"修复了 iOS 渲染问题\",\"kind\":\"retrieval_feedback\",\"ts\":\"2026-10-08T07:47:08.479Z\"}",
+      "id": "2PZEMORVRJ4TIS52FBJKHKX2HM"
+    },
+    {
+      "name": "author-differs",
+      "input": {
+        "ts": "2026-10-08T07:47:08.479Z",
+        "author": "claude",
+        "kind": "note",
+        "content": "修复了 iOS 渲染问题"
+      },
+      "canonical": "{\"attachments\":[],\"author\":\"claude\",\"content\":\"修复了 iOS 渲染问题\",\"kind\":\"note\",\"ts\":\"2026-10-08T07:47:08.479Z\"}",
+      "id": "OAB35SWC5MI3KYJVBVV74RWLYQ"
+    },
+    {
+      "name": "unicode-and-second-precision",
+      "input": {
+        "ts": "2026-01-02T03:04:05Z",
+        "author": "agent/claude",
+        "kind": "note",
+        "content": "emoji 🚀 与换行\n second line"
+      },
+      "canonical": "{\"attachments\":[],\"author\":\"agent/claude\",\"content\":\"emoji 🚀 与换行\\n second line\",\"kind\":\"note\",\"ts\":\"2026-01-02T03:04:05.000Z\"}",
+      "id": "PUS2DTGWJOJAOHEWQR53YHG7PE"
+    },
+    {
+      "name": "empty-content",
+      "input": {
+        "ts": "2026-01-02T03:04:05.000Z",
+        "author": "will",
+        "kind": "note",
+        "content": ""
+      },
+      "canonical": "{\"attachments\":[],\"author\":\"will\",\"content\":\"\",\"kind\":\"note\",\"ts\":\"2026-01-02T03:04:05.000Z\"}",
+      "id": "EX2CTUV3U62HQYIMBCWMDKXWGM"
+    },
+    {
+      "name": "attachments-are-sorted",
+      "input": {
+        "ts": "2026-01-02T03:04:05Z",
+        "author": "will",
+        "kind": "note",
+        "content": "with attachments",
+        "attachments": ["bbbb", "aaaa"]
+      },
+      "canonical": "{\"attachments\":[\"aaaa\",\"bbbb\"],\"author\":\"will\",\"content\":\"with attachments\",\"kind\":\"note\",\"ts\":\"2026-01-02T03:04:05.000Z\"}",
+      "id": "3EWO32LESQ6MXZWNEBGTZUGHVA"
+    }
+  ]
+}

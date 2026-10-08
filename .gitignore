@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.wrangler/
+.wrangler-it/
+.turso/
+.dev.vars
+*.local.db
+*.local.db-*
+*.log

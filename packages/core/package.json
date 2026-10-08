@@ -1,0 +1,15 @@
+{
+  "name": "@liushui/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "记忆流水账的共享内核：记录模型、校验、规范化、确定性 ID 与存储访问",
+  "exports": {
+    ".": "./src/index.ts",
+    "./storage": "./src/storage/index.ts",
+    "./migrations": "./src/storage/load-migrations.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@liushui/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "记忆流水账的写入 Web API（Cloudflare Worker）",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.0",
+    "@liushui/core": "*"
+  }
+}

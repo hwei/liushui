@@ -1,0 +1,23 @@
+name = "liushui-mem"
+main = "src/index.ts"
+compatibility_date = "2026-10-08"
+workers_dev = true
+
+# 本地开发（wrangler dev）从 .dev.vars 读取 secrets；见 .dev.vars.example。
+
+[vars]
+SERVICE_VERSION = "0.1.0"
+
+[env.dev]
+name = "liushui-mem-dev"
+workers_dev = true
+
+[env.dev.vars]
+SERVICE_VERSION = "0.1.0-dev"
+
+[env.prod]
+name = "liushui-mem-prod"
+workers_dev = true
+
+[env.prod.vars]
+SERVICE_VERSION = "0.1.0"
