@@ -16,6 +16,7 @@ import type { GitRunner } from './meta.ts';
 import { runAppend } from './append.ts';
 import { readConfiguredTokens } from './config.ts';
 import { CliError, scrubSecrets } from './errors.ts';
+import { runFeedbackCommand } from './feedback.ts';
 import { DEFAULT_SQL_LIMIT, DEFAULT_SQL_MAX_WIDTH, runSqlCommand } from './sql.ts';
 import { CLI_VERSION } from './version.ts';
 
@@ -24,7 +25,7 @@ export interface CliIo {
   stderr(text: string): void;
   env: Record<string, string | undefined>;
   cwd: string;
-  /** `liushui sql -` 从标准输入读取 SQL；默认读 process.stdin。 */
+  /** `liushui sql -` 或 `liushui feedback -` 从标准输入读取；默认读 process.stdin。 */
   readStdin?: () => Promise<string>;
   fetchImpl?: typeof fetch;
   now?: () => Date;
@@ -37,32 +38,36 @@ export interface CliIo {
 
 const USAGE = `用法：
   liushui append [--vault <name>]... [--kind <kind>] [--config <path>] [--env <name>] <内容...>
+  liushui feedback [--vault <name>] [--config <path>] [--env <name>] <JSON | ->
   liushui sql [--vault <name>] [--json] [--limit N] [--max-width N] [--arg V]... <SQL | ->
   liushui --version
   liushui --help
 
 示例：
   liushui append "修复了 iOS 渲染问题"
+  liushui feedback '{"v":1,"intent":"搜渲染问题","queries":[{"sql":"SELECT 1"}]}'
+  echo '{"v":1,"intent":"搜渲染问题","queries":[{"sql":"SELECT 1"}]}' | liushui feedback -
   liushui sql "SELECT id, kind FROM memories ORDER BY ts DESC LIMIT 5"
   echo "SELECT COUNT(*) FROM memories" | liushui sql -
 
 说明：
   --vault 可重复，也可用逗号分隔（--vault personal,work）；省略时使用配置中的默认库。
+  feedback 与 sql 一次只针对一个库（--vault 至多一个）。
   --kind 省略时默认 note。
-  sql 一次只查一个库（--vault 至多一个）；默认输出带表头的 TSV，--json 输出 JSONL。
+  sql 默认输出带表头的 TSV，--json 输出 JSONL。
   sql 的 --limit 默认 ${DEFAULT_SQL_LIMIT}，--max-width 默认 ${DEFAULT_SQL_MAX_WIDTH}；--arg 可重复，作为位置参数传给 SQL。
   token 只从配置文件读取，不会出现在输出与日志中。
 `;
 
 interface ParsedArgs {
-  command: 'append' | 'sql' | 'help' | 'version';
-  // append
+  command: 'append' | 'feedback' | 'sql' | 'help' | 'version';
+  // append & feedback
   vaultNames: string[];
   kind: string;
   content: string;
+  useStdin: boolean;
   // sql
   sqlText: string;
-  useStdin: boolean;
   sqlArgs: string[];
   json: boolean;
   limit: number | undefined;
@@ -78,8 +83,8 @@ function emptyArgs(): ParsedArgs {
     vaultNames: [],
     kind: 'note',
     content: '',
-    sqlText: '',
     useStdin: false,
+    sqlText: '',
     sqlArgs: [],
     json: false,
     limit: undefined,
@@ -109,7 +114,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     result.command = 'version';
     return result;
   }
-  if (first !== 'append' && first !== 'sql') {
+  if (first !== 'append' && first !== 'feedback' && first !== 'sql') {
     throw new CliError(`未知子命令：${first}\n\n${USAGE}`);
   }
 
@@ -157,6 +162,8 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
         result.kind = value.trim();
         continue;
       }
+    } else if (command === 'feedback') {
+      // feedback 不接受 --kind, --json 等
     } else {
       if (arg === '--json') {
         result.json = true;
@@ -188,6 +195,19 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   if (command === 'append') {
     result.command = 'append';
     result.content = positional.join(' ');
+    return result;
+  }
+
+  if (command === 'feedback') {
+    result.command = 'feedback';
+    if (positional.includes('-')) {
+      if (positional.length !== 1) {
+        throw new CliError('`-` 必须单独使用（从标准输入读取反馈 JSON）\n\n' + USAGE);
+      }
+      result.useStdin = true;
+    } else {
+      result.content = positional.join(' ');
+    }
     return result;
   }
 
@@ -256,6 +276,40 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
     if (args.command === 'version') {
       out(`${CLI_VERSION}\n`);
       return 0;
+    }
+
+    if (args.command === 'feedback') {
+      const feedbackInput = args.useStdin
+        ? await (io.readStdin ?? readStdinDefault)()
+        : args.content;
+      const result = await runFeedbackCommand(
+        {
+          input: feedbackInput,
+          vaultNames: args.vaultNames,
+        },
+        {
+          env: io.env,
+          cwd: io.cwd,
+          ...(args.configPath !== undefined ? { configPath: args.configPath } : {}),
+          ...(args.envName !== undefined ? { envName: args.envName } : {}),
+          ...(io.fetchImpl !== undefined ? { fetchImpl: io.fetchImpl } : {}),
+          ...(io.now !== undefined ? { now: io.now } : {}),
+          ...(io.runGit !== undefined ? { runGit: io.runGit } : {}),
+          ...(io.hostname !== undefined ? { hostname: io.hostname } : {}),
+          ...(io.sleep !== undefined ? { sleep: io.sleep } : {}),
+          ...(io.maxAttempts !== undefined ? { maxAttempts: io.maxAttempts } : {}),
+          ...(io.baseDelayMs !== undefined ? { baseDelayMs: io.baseDelayMs } : {}),
+          stderr: (t) => err(t),
+        },
+      );
+
+      const report = result.appended.reports[0]!;
+      if (report.ok) {
+        out(`${report.id}\n`);
+        return 0;
+      }
+      err(`liushui: 库 ${report.vault} 写入失败：${report.message ?? '未知错误'}\n`);
+      return 1;
     }
 
     if (args.command === 'sql') {

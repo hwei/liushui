@@ -12,7 +12,7 @@ description: 读写用户的 liushui 记忆流水账（只追加）。当用户�
 
 - **写**（`liushui append "…"`）：用户明确说“记住这个”“记下来”，或发生了值得留档的事（决定、修复、踩坑、上下文）。写入是幂等的，重复提交同一条不会产生副本。
 - **查**（`liushui sql "SELECT …"`）：需要回忆以前的决定/修复/上下文时先查，再依靠记忆回答；不要凭印象编造。
-- 检索不好用时，按 `DESIGN.md` 的反馈记忆规范写一条 `kind = retrieval_feedback` 的记忆（先用 `append`）。
+- 检索不好用时，用 `liushui feedback` 写一条结构化的 `retrieval_feedback` 记录（见下方「记录检索反馈」一节）。
 
 ## `memories` 表
 
@@ -100,8 +100,49 @@ LIMIT 20;
 
 - 展示内容和片段一律取 `memories.content`；**不要读 `body`，也不要用 `snippet()` / `highlight()`**（`body` 是切分后的文本，读起来不自然）。
 - 这是 bigram 匹配，偶尔会有误命中（两字片段跨词边界，如“作用”命中“合作用户”）；`ORDER BY rank` 会把更相关的排前面。
-- 搜不到时，先换词或拆词，再按反馈记忆规范写一条 `retrieval_feedback`。
+- 搜不到时，先换词或拆词，再用 `liushui feedback` 记录反馈。
 - 直接手写 `MATCH '渲染问题'`（不用宏）会因为没切分而静默返回空，不要这样写。
+- **反馈内容也会进入全文索引**：`retrieval_feedback` 记录的 `content` 也是一段文本，其字段与 SQL 会被索引。因此检索普通笔记时，必要时加上 `kind <> 'retrieval_feedback'` 过滤。
+
+## 记录检索反馈 `liushui feedback`
+
+当尝试了若干 SQL 依然未能查到想要的信息、或者经过人工/事后排查找到了真实期望命中的记忆 ID 时，使用 `liushui feedback` 写入结构化反馈。
+
+命令接受一份反馈 JSON（直接传参或管道从标准输入 `-` 输入）：
+
+```bash
+# 管道/标准输入示例（推荐）：
+cat << 'EOF' | liushui feedback -
+{
+  "v": 1,
+  "intent": "查找上次 iOS 渲染问题是怎么排查解决的",
+  "queries": [
+    {
+      "sql": "SELECT m.id, m.content FROM memories_fts JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH fts('iOS渲染') ORDER BY rank",
+      "outcome": "0 行"
+    },
+    {
+      "sql": "SELECT id, content FROM memories WHERE content LIKE '%渲染%'",
+      "outcome": "3 行，但都是 Web 端渲染，不是 iOS"
+    }
+  ],
+  "expected_ids": ["RYRP4645Q2VOLZ4DOVYPLUKVA4"],
+  "cause": "原文写的是“Metal 着色器”，没有出现“渲染”二字：同义词问题"
+}
+EOF
+```
+
+### 反馈填写要点
+1. **`queries` 写真实执行过的 SQL**：用例的查询必须是当时真实尝试过的查询与结果概要（`outcome`），这是回归有意义的前提。
+2. **`cause` 写当场调查结论**：记录为什么没搜到（如同义词问题、时间过滤过窄、切分断词等）。
+3. **期望 ID 可先留空**：若当时不知道正确记录的 ID，省略 `expected_ids` 字段即可（记为待补充反馈）。找到真实 ID 后，再写一条补充记录。
+
+### 补充期望 ID
+流水账不可改写，补充或更正期望 ID 通过一条引用原反馈的补充记录完成：
+
+```bash
+liushui feedback '{"v":1,"refines":"RYRP4645Q2VOLZ4DOVYPLUKVA4","expected_ids":["BCDEFGHJKMNPQRSTVWXYZ23456"],"note":"事后翻阅流水账找到了当时记录的真实 ID"}'
+```
 
 ## 查询命令与输出
 

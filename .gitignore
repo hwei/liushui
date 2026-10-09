@@ -8,3 +8,4 @@ coverage/
 *.local.db
 *.local.db-*
 *.log
+.liushui/

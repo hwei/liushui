@@ -70,6 +70,12 @@ prod 同理，库名换成 `liushui-personal-prod` / `liushui-work-prod`。
 
 > 只读凭据与写凭据是两层，互不牵连：写凭据用于 `/append`，只读凭据用于 `/sql`。
 > 一个库可以由多个 client token 共用同一份只读凭据（见第 8 节）。
+> **回归快照导出复用**：`scripts/regress.ts` 导出本地回归快照时也复用这份 `--read-only` token（不需要新建凭据）：
+> ```bash
+> TURSO_URL='libsql://liushui-personal-prod-<org>.turso.io' \
+> TURSO_AUTH_TOKEN='<只读 token>' \
+> npm run regress -- snapshot --name personal-prod
+> ```
 
 ## 2. 执行迁移（幂等）
 

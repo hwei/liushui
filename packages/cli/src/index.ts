@@ -2,6 +2,7 @@ export * from './append.ts';
 export * from './client.ts';
 export * from './config.ts';
 export * from './errors.ts';
+export * from './feedback.ts';
 export * from './main.ts';
 export * from './meta.ts';
 export * from './proxy-hint.ts';

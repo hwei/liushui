@@ -247,3 +247,45 @@ export async function postSql(
     attempts: maxAttempts,
   };
 }
+
+export interface GetServiceVersionOptions {
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}
+
+/**
+ * 读取目标库对应服务的版本号（`GET <url>/health`）。
+ * 3 秒超时，成功返回 `version` 字符串，任何失败返回 `null`（不抛错、不重试，诊断不含 token）。
+ */
+export async function getServiceVersion(
+  vault: ResolvedVault,
+  options: GetServiceVersionOptions = {},
+): Promise<string | null> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 3000;
+
+  try {
+    const response = await fetchImpl(`${vault.url}/health`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const body: unknown = await response.json();
+    if (typeof body === 'object' && body !== null && 'version' in body) {
+      const v = (body as Record<string, unknown>)['version'];
+      if (typeof v === 'string' && v.trim() !== '') {
+        return v.trim();
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

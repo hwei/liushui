@@ -20,6 +20,8 @@ packages/cli       `liushui` 命令行：meta 自动采集与清洗、按库脱�
 skills/liushui/    供所有项目的 agent 使用的记忆读写 skill（安装方式见下）
 scripts/migrate.ts 对某个库幂等执行迁移
 scripts/fts-rebuild.ts 重建或检查某个库的全文索引（派生数据，可随时重建）
+scripts/regress.ts 导出回归快照并在本地运行评估与基线对比
+MAINTENANCE.md     系统维护指南（从反馈到回归测试的闭环流程）
 openspec/          OpenSpec change 与 spec（唯一的需求来源）
 ```
 
@@ -123,6 +125,30 @@ node packages/cli/bin/liushui.ts append --vault personal,work --kind note "同�
 
 也可以直接 `npx liushui …`（workspace bin 已链接）。
 
+#### 记录检索反馈 `liushui feedback`
+
+当检索未命中或效果不佳时，用 `liushui feedback` 写入一条 `kind = retrieval_feedback` 的结构化记录。输入必须为合法的反馈 JSON（传参或通过 stdin `-` 传入），命令会在写入前严格校验，并自动向目标库所在服务的健康检查端点补充 `service_version`：
+
+```bash
+# 直接传参写入一条主反馈（省略 --vault 时使用默认库）：
+node packages/cli/bin/liushui.ts feedback '{"v":1,"intent":"上次 iOS 渲染问题怎么查的","queries":[{"sql":"SELECT id FROM memories WHERE content LIKE '\''%渲染%'\''","outcome":"0 行"}],"expected_ids":["RYRP4645Q2VOLZ4DOVYPLUKVA4"],"cause":"同义词问题"}'
+# → RYRP4645Q2VOLZ4DOVYPLUKVA4        （成功时输出 id）
+
+# 从标准输入读取（推荐，避免复杂的 shell 转义）：
+cat << 'EOF' | node packages/cli/bin/liushui.ts feedback -
+{
+  "v": 1,
+  "intent": "搜不到渲染相关的记忆",
+  "queries": [
+    { "sql": "SELECT m.id, m.content FROM memories_fts JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH fts('iOS渲染') ORDER BY rank" }
+  ]
+}
+EOF
+
+# 事后补充或更正期望 ID（流水账不可修改，写入一条引用原反馈的补充记录）：
+node packages/cli/bin/liushui.ts feedback '{"v":1,"refines":"RYRP4645Q2VOLZ4DOVYPLUKVA4","expected_ids":["BCDEFGHJKMNPQRSTVWXYZ23456"],"note":"事后翻看流水账找到了当时记录的真实 ID"}'
+```
+
 ### 5. 只读查询 `liushui sql`
 
 `liushui sql` 对一个库执行一条只读 SQL，默认输出带表头的 TSV：
@@ -210,6 +236,7 @@ cp -r skills/liushui ~/.claude/skills/liushui
 ## 文档
 
 - 总体设计：[`DESIGN.md`](./DESIGN.md)
+- 系统维护指南：[`MAINTENANCE.md`](./MAINTENANCE.md)
 - 部署与 token 轮换：[`docs/deploy.md`](./docs/deploy.md)
 - 需求与验收标准：[`openspec/`](./openspec)（spec 是唯一需求来源）
 - Agent skill：[`skills/liushui/SKILL.md`](./skills/liushui/SKILL.md)

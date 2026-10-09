@@ -77,21 +77,24 @@ WHERE m.ts > '2026-01-01';
 
 ## 反馈记忆规范（kind = retrieval_feedback）
 
-版本号不足以复现，因为索引、模型、数据量都在变。反馈记忆应包含：
-- 失败的检索意图（自然语言 query）
-- 实际尝试过的 SQL 与返回结果概要
-- **期望命中的记忆 ID**（流水账不变，ID 是稳定锚点，可直接转为回归测试）；当时不知道可留空，事后再补一条引用
-- **当场的原因调查**（同义词？时间过滤太窄？图片无文本描述？）
-- 系统版本号（辅助信息）
+（已实现，规范见 `openspec/specs/memory-feedback/` 与 `openspec/specs/memory-cli/`。）
+
+版本号不足以复现，因为索引、模型、数据量都在变。反馈记忆规范：
+- 通过 `liushui feedback` 写入结构化 JSON，自动校验并补齐 `service_version`。
+- 包含检索意图（`intent`）、真实尝试过的 SQL 列表（`queries`）、期望命中的记忆 ID（`expected_ids`，可留空）、当场调查（`cause`）。
+- 流水账不可改写，事后补充或更正期望 ID 通过一条引用原反馈的补充记录（`refines`）完成，按时间取最新生效。
 
 ## 维护流程（详见 MAINTENANCE.md）
 
-1. 拉取上次维护以来的反馈记忆
-2. 带期望 ID 的反馈加入回归测试集
-3. 跑测试集看现状
-4. 归类问题，提出改进（schema、派生表、SQL 宏、遗忘规则……）
-5. 改完重跑，确认改善且无退化
-6. 部署，并写一条 `maintenance_log` 记忆：改了什么、为什么
+（已实现，执行工具为 `scripts/regress.ts` 与 `npm run regress`，详细步骤见 [`MAINTENANCE.md`](./MAINTENANCE.md)。）
+
+1. 用只读凭据拉取目标库的本地快照（`npm run regress -- snapshot`）
+2. 在当前 main 上运行快照评估，得到基线报告（`npm run regress -- run`）
+3. 查看待补充与无效反馈，必要时补写记录并刷新快照
+4. 按 fail/partial 用例归类问题，在候选代码中实施改进（新派生数据必须在 `rebuildDerived` 中登记）
+5. 在候选代码上使用同一份快照对比基线重跑，确认有改善且无退化（`--baseline`）
+6. 部署（按 `docs/deploy.md` 先迁移、再部署、后重建索引）
+7. 写入一条 `maintenance_log` 记忆，并建议补写正向反馈形成防退化护栏
 
 ## 相关工作（参考）
 - projectmem：append-only 事件日志 + 确定性投影（arXiv 2606.12329）
