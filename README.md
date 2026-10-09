@@ -9,16 +9,17 @@ liushui append  →  Cloudflare Worker（token 鉴权）  →  Turso / libSQL（
 liushui sql     →  POST /sql（只读凭据 + 只读事务）  →  单库只读查询
 ```
 
-已实现文本的写入与只读查询。FTS、向量（`embed()`）、附件、提交页、反馈与维护流程都还不在范围内。
+已实现文本的写入、只读查询与全文检索（FTS5，中日文 bigram 切分，`fts('…')` 宏）。向量（`embed()`）、附件、提交页、反馈与维护流程都还不在范围内。
 
 ## 目录结构
 
 ```
-packages/core      共享内核：记录模型与校验、规范化与确定性 ID、迁移与幂等追加、只读查询的语句检查/包裹/整形
+packages/core      共享内核：记录模型与校验、规范化与确定性 ID、迁移与幂等追加、只读查询的语句检查/包裹/整形、全文检索的切分与 fts() 宏展开
 packages/worker    Cloudflare Worker：token 鉴权、按 token 路由到库、POST /append、POST /sql、GET /health
 packages/cli       `liushui` 命令行：meta 自动采集与清洗、按库脱敏、多库提交、失败重试、只读查询与 TSV/JSONL 输出
 skills/liushui/    供所有项目的 agent 使用的记忆读写 skill（安装方式见下）
 scripts/migrate.ts 对某个库幂等执行迁移
+scripts/fts-rebuild.ts 重建或检查某个库的全文索引（派生数据，可随时重建）
 openspec/          OpenSpec change 与 spec（唯一的需求来源）
 ```
 
@@ -147,6 +148,18 @@ node packages/cli/bin/liushui.ts sql --arg note "SELECT id FROM memories WHERE k
 - 查询一次只针对一个库：`--vault` 至多一个，省略时用默认库。
 - 只有一条只读语句（`SELECT` / `WITH … SELECT` / `EXPLAIN QUERY PLAN`）被接受；写语句、DDL、`PRAGMA`、多条语句一律拒绝。
 - `sql_error`、`statement_not_allowed`、`query_timeout` 与 401/403 不重试；网络错误与 503 重试。
+
+#### 全文检索
+
+`memories_fts` 是 `memories.content` 的派生全文索引（追加时同事务维护）。用 `fts('…')` 宏检索，只写原文：
+
+```bash
+node packages/cli/bin/liushui.ts sql "SELECT m.id, m.ts, m.content FROM memories_fts JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH fts('渲染 问题') ORDER BY rank LIMIT 10"
+```
+
+- 空格分隔的词表示同时出现，独立的大写 `OR` 表示任一出现（同时出现优先）；每个词按连续出现匹配。
+- 中文按相邻两个字切分，所以两个字及以上的词都能检索；单个汉字或假名会被拒绝并提示改用 `LIKE`。
+- 索引是派生数据，可随时重建；已有数据或升级后用 `npm run fts:rebuild`，核对用 `npm run fts:rebuild -- --check`（凭据环境变量同 `npm run migrate`）。部署顺序见 [`docs/deploy.md`](./docs/deploy.md)：**先迁移、再部署、后重建**。
 
 **输出约定**：单库成功时 stdout 只有 `id`（便于 agent 解析）；多库时 stdout 是 JSONL，每库一行；失败写到 stderr，任何库失败退出码为 1；用法/配置错误退出码为 2。`--env dev|prod` 或 `LIUSHUI_ENV` 切换环境，配置文件里的 `env` 是默认值。
 

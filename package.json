@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "migrate": "node scripts/migrate.ts",
+    "fts:rebuild": "node scripts/fts-rebuild.ts",
     "test:worker-integration": "node --test packages/worker/integration/wrangler-local.test.ts"
   },
   "devDependencies": {

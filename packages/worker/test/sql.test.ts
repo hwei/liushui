@@ -619,3 +619,93 @@ describe('Hrana 方案 A 执行器（task 3.2）', () => {
     }
   });
 });
+
+describe('全文检索宏（memory-query）', () => {
+  let ctx: TestContext;
+  beforeEach(async () => {
+    ctx = await createTestContext();
+  });
+  afterEach(async () => {
+    await ctx.cleanup();
+  });
+
+  const SEARCH =
+    "SELECT m.content FROM memories_fts JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH fts('%Q%') ORDER BY rank";
+
+  async function appendContent(content: string): Promise<void> {
+    const res = await callAppend(ctx, await makeAppendBody({ content }), PERSONAL_TOKEN);
+    expect(res.status).toBe(201);
+  }
+
+  it('用宏做全文检索并按相关度返回', async () => {
+    await appendContent('渲染管线切换到 URP 后阴影变糊');
+    await appendContent('和渲染无关的记录：数据库迁移');
+    await appendContent('完全不相关');
+    const { status, body } = await callSql(ctx, { sql: SEARCH.replace('%Q%', '渲染') }, PERSONAL_TOKEN);
+    expect(status).toBe(200);
+    expect(body.rows).toHaveLength(2);
+  });
+
+  it('AND、OR 与同时出现优先于 OR', async () => {
+    await appendContent('打包时 IL2CPP 报错');
+    await appendContent('打包成功');
+    await appendContent('阴影变糊');
+    const run = async (q: string): Promise<string[]> => {
+      const { body } = await callSql(ctx, { sql: SEARCH.replace('%Q%', q) }, PERSONAL_TOKEN);
+      return (body.rows ?? []).map((row) => String(row[0])).sort();
+    };
+    expect(await run('打包 报错')).toEqual(['打包时 IL2CPP 报错']);
+    expect(await run('阴影 OR 报错')).toEqual(['打包时 IL2CPP 报错', '阴影变糊']);
+    expect(await run('打包 报错 OR 阴影')).toEqual(['打包时 IL2CPP 报错', '阴影变糊']);
+  });
+
+  it('EXPLAIN QUERY PLAN 中同样展开', async () => {
+    const { status, body } = await callSql(
+      ctx,
+      { sql: 'EXPLAIN QUERY PLAN ' + SEARCH.replace('%Q%', '渲染') },
+      PERSONAL_TOKEN,
+    );
+    expect(status).toBe(200);
+    expect(body.rows && body.rows.length).toBeGreaterThan(0);
+  });
+
+  it('字符串和注释里的宏不展开', async () => {
+    const { status, body } = await callSql(
+      ctx,
+      { sql: "SELECT 'fts(''x'')' AS s -- fts('y')" },
+      PERSONAL_TOKEN,
+    );
+    expect(status).toBe(200);
+    expect(body.rows).toEqual([["fts('x')"]]);
+  });
+
+  it('引号与运算符不会触发 FTS 语法错误', async () => {
+    const { status } = await callSql(
+      ctx,
+      { sql: SEARCH.replace('%Q%', '"NEAR" link.xml*') },
+      PERSONAL_TOKEN,
+    );
+    expect(status).toBe(200);
+  });
+
+  it.each([
+    ['单个汉字', "SELECT id FROM memories_fts WHERE memories_fts MATCH fts('渲')", undefined, /LIKE/],
+    ['词中夹带单字', "SELECT id FROM memories_fts WHERE memories_fts MATCH fts('iOS的')", undefined, /LIKE/],
+    ['非字面量参数', 'SELECT id FROM memories_fts WHERE memories_fts MATCH fts(?)', ['渲染'], /字面量/],
+    ['空文本', "SELECT id FROM memories_fts WHERE memories_fts MATCH fts('  ')", undefined, /不能为空/],
+  ])('%s被拒绝且执行器从未被调用', async (_name, sql, args, pattern) => {
+    const factory = vi.fn<HandlerDeps['createQueryExecutor']>(() => ({
+      execute: async () => ({ columns: [], rows: [] }),
+    }));
+    const { status, body } = await callSql(
+      ctx,
+      args ? { sql, args } : { sql },
+      PERSONAL_TOKEN,
+      { ...ctx.deps, createQueryExecutor: factory },
+    );
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ error: { code: 'invalid_field', details: { field: 'sql' } } });
+    expect(body.error?.message).toMatch(pattern);
+    expect(factory).not.toHaveBeenCalled();
+  });
+});

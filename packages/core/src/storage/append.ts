@@ -5,6 +5,7 @@
  */
 
 import type { Client } from '@libsql/client';
+import { segment } from '../fts.ts';
 import type { MemoryRecord } from '../record.ts';
 
 /** 追加结果。`created` 为 false 表示该 `id` 已存在（幂等命中）。 */
@@ -17,22 +18,34 @@ const INSERT_SQL = `INSERT INTO memories (id, ts, author, kind, content, meta, r
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING`;
 
-/** 追加一条记录，返回是否为新写入。 */
+/** 仅当上一条语句真的新增了记录时才写索引（幂等命中时 `changes()` 为 0）。 */
+const INSERT_FTS_SQL = 'INSERT INTO memories_fts (id, body) SELECT ?, ? WHERE changes() = 1';
+
+/**
+ * 追加一条记录，返回是否为新写入。
+ * 记录与它的全文索引条目在同一个写事务里写入：要么都写入，要么都不写入。
+ */
 export async function appendMemory(client: Client, record: MemoryRecord): Promise<AppendResult> {
-  const result = await client.execute({
-    sql: INSERT_SQL,
-    args: [
-      record.id,
-      record.ts,
-      record.author,
-      record.kind,
-      record.content,
-      JSON.stringify(record.meta),
-      record.received_at,
-      record.schema_v,
+  const [inserted] = await client.batch(
+    [
+      {
+        sql: INSERT_SQL,
+        args: [
+          record.id,
+          record.ts,
+          record.author,
+          record.kind,
+          record.content,
+          JSON.stringify(record.meta),
+          record.received_at,
+          record.schema_v,
+        ],
+      },
+      { sql: INSERT_FTS_SQL, args: [record.id, segment(record.content)] },
     ],
-  });
-  return { id: record.id, created: result.rowsAffected > 0 };
+    'write',
+  );
+  return { id: record.id, created: (inserted?.rowsAffected ?? 0) > 0 };
 }
 
 /** 按 `id` 读取一条记录；不存在时返回 null。 */

@@ -144,3 +144,44 @@ describe('追加端点（task 4.2）', () => {
     expect(await countMemories(ctx.vaults['personal']!.client)).toBe(1);
   });
 });
+
+describe('追加时维护全文索引（memory-fts）', () => {
+  let ctx: TestContext;
+  beforeEach(async () => {
+    ctx = await createTestContext();
+  });
+  afterEach(async () => {
+    await ctx.cleanup();
+  });
+
+  async function indexRows(): Promise<number> {
+    const result = await ctx.vaults['personal']!.client.execute('SELECT COUNT(*) AS n FROM memories_fts');
+    return Number(result.rows[0]?.['n']);
+  }
+
+  it('新记录写入后索引里立即有对应条目', async () => {
+    const body = await makeAppendBody({ content: '渲染管线问题' });
+    expect((await callAppend(ctx, body, PERSONAL_TOKEN)).status).toBe(201);
+    const hit = await ctx.vaults['personal']!.client.execute({
+      sql: 'SELECT id FROM memories_fts WHERE memories_fts MATCH ?',
+      args: ['"渲染"'],
+    });
+    expect(hit.rows.map((row) => String(row['id']))).toEqual([String(body['id'])]);
+  });
+
+  it('幂等重放后索引条目数不变', async () => {
+    const body = await makeAppendBody({ content: '重复提交' });
+    await callAppend(ctx, body, PERSONAL_TOKEN);
+    const second = await callAppend(ctx, body, PERSONAL_TOKEN);
+    expect(second.status).toBe(200);
+    expect(await indexRows()).toBe(1);
+  });
+
+  it('索引写入失败时返回 503 storage_unavailable，且 memories 无新增', async () => {
+    await ctx.vaults['personal']!.client.execute('DROP TABLE memories_fts');
+    const { status, body } = await callAppend(ctx, await makeAppendBody(), PERSONAL_TOKEN);
+    expect(status).toBe(503);
+    expect(body).toMatchObject({ error: { code: 'storage_unavailable' } });
+    expect(await countMemories(ctx.vaults['personal']!.client)).toBe(0);
+  });
+});

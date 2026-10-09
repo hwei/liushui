@@ -57,7 +57,8 @@ meta 由 CLI 自动采集，不依赖 agent 手填。
 ### SQL 查询
 - 只读连接，强制 LIMIT 与超时（已实现：只读凭据 + 执行层永不提交 + 单语句检查；行数/单元格/响应大小上限与超时）
 - 写入不走 SQL，只走 append（已实现）
-- 语义检索通过 `embed('文本')` 宏：**尚未实现**（属后续 change，与 FTS5 一起做）；下面这段只是目标形态
+- 全文检索（已实现，见 `openspec/specs/memory-fts/`）：派生表 `memories_fts`（FTS5），中日文按 bigram 切分（`FTS_SEGMENTER_V` 标记规则版本），查询用 `fts('文本')` 宏展开成 `MATCH` 表达式；索引与流水账同事务维护，可用 `npm run fts:rebuild` 整体重建与核对。派生数据的状态（所用切分版本、重建时间、行数）登记在 `derived_state`。
+- 语义检索通过 `embed('文本')` 宏：**尚未实现**（属后续 change）；下面这段只是目标形态
 
 ```sql
 SELECT m.id, m.ts, m.author, m.content

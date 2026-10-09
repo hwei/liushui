@@ -85,7 +85,25 @@ TURSO_AUTH_TOKEN='<turso-token>' \
 npm run migrate
 ```
 
-预期输出：首次 `已应用迁移：1（共 1 个）。`，再次执行 `schema 已是最新…`。
+预期输出：首次 `已应用迁移：1, 2（共 2 个）。`（已有旧库则只显示新增的版本），再次执行 `schema 已是最新…`。
+
+> **顺序很重要：先迁移、再部署、后重建索引。** 从 `0.3.0` 起 `/append` 会同事务写全文索引表 `memories_fts`；
+> 如果 Worker 先于迁移上线，`/append` 在没有该表的库上会一直返回 503 `storage_unavailable`。
+> 回滚 Worker 不需要回滚迁移（旧代码忽略新表）。
+
+### 2.1 重建全文索引（每个库，部署之后）
+
+迁移只建空表；迁移之后、新 Worker 上线之前写入的记录没有索引条目，所以部署后要重建一次，并用 `--check` 确认：
+
+```bash
+TURSO_URL='libsql://liushui-personal-dev-<org>.turso.io' TURSO_AUTH_TOKEN='<turso-token>' npm run fts:rebuild
+
+TURSO_URL='libsql://liushui-personal-dev-<org>.turso.io' TURSO_AUTH_TOKEN='<turso-token>' npm run fts:rebuild -- --check
+```
+
+`--check` 只读：报告 `memories` 与索引的条数、缺失、多余、重复，以及切分版本是否与当前代码一致；任何一项不一致都以退出码 1 退出，可直接用于部署验证。
+重建在一个写事务里完成（当前数据量下是秒级），期间并发的 `/append` 会等待或被 CLI 自动重试。
+以后切分规则升版本（`FTS_SEGMENTER_V`）后，也用同一条命令重建。凭据只从环境变量读取，不会被打印。
 
 ## 3. 生成本系统的 token 并写入 Worker secrets
 
@@ -152,7 +170,7 @@ npx wrangler deploy --env prod
 
 ```bash
 curl https://liushui-mem-dev.<subdomain>.workers.dev/health
-# → {"ok":true,"version":"0.2.0-dev"}
+# → {"ok":true,"version":"0.3.0-dev"}
 
 # 未授权必须被拒绝：
 curl -i -X POST https://liushui-mem-dev.<subdomain>.workers.dev/append -d '{}'
@@ -163,6 +181,11 @@ curl -s -X POST https://liushui-mem-dev.<subdomain>.workers.dev/sql \
   -H 'authorization: Bearer <PERSONAL_TOKEN>' -H 'content-type: application/json' \
   -d '{"sql":"SELECT COUNT(*) AS n FROM memories"}'
 # → 200 {"vault":"personal","columns":["n"],"rows":[[...]],"truncated":{"rows":false,"cells":0},"stats":{...}}
+
+# 全文检索（先 append 一条含两字中文词的记忆，例如“渲染管线测试”）：
+curl -s -X POST https://liushui-mem-dev.<subdomain>.workers.dev/sql   -H 'authorization: Bearer <PERSONAL_TOKEN>' -H 'content-type: application/json'   -d '{"sql":"SELECT m.id FROM memories_fts JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH fts('"'"'渲染'"'"') ORDER BY rank"}'
+# → 200，rows 里有刚写入的 id；stats.rows_read 是这次检索的读取行数
+# 单字（fts('渲')）必须返回 400 invalid_field，消息提示改用 LIKE
 
 # 写语句必须被拒绝且记录数不变：
 curl -s -X POST https://liushui-mem-dev.<subdomain>.workers.dev/sql \
@@ -303,6 +326,9 @@ node packages/cli/bin/liushui.ts append "轮换验证"
 | `/sql` 返回 500 `server_misconfigured` | `LIUSHUI_VAULT_READ_CREDS` 缺失、损坏，或该库没有条目 | 检查 secret（只允许 `authToken`，不含 `url`），重新写入并部署（3.1 / 8.4） |
 | `/sql` 返回 503 `storage_unavailable` | 只读凭据失效或库不可达 | 检查只读 token；必要时轮换（8.4） |
 | `/sql` 返回 400 `statement_not_allowed` | 提交了写语句、DDL、`PRAGMA` 或多条语句 | 只提交单条 `SELECT` / `WITH … SELECT` / `EXPLAIN QUERY PLAN` |
+| `/append` 在升级后一直返回 503，`/sql` 查 `memories_fts` 报“no such table” | 库还没执行 `0002_fts` 迁移（Worker 先于迁移上线） | 对该库执行 `npm run migrate`，再 `npm run fts:rebuild`（2.1） |
+| `fts()` 检索查不到刚迁移前写入的记录 | 这些记录没有索引条目 | `npm run fts:rebuild -- --check` 看缺失数，再 `npm run fts:rebuild` |
+| `/sql` 返回 400 `invalid_field`，提示单字改用 `LIKE` | `fts()` 里有单个汉字或假名 | 换成两字及以上的词，或改用 `content LIKE '%字%'` |
 | `/sql` 返回 400 `sql_error` | SQL 语法错误、未知表或列 | 按错误描述修正语句 |
 | `/sql` 返回 504 `query_timeout` | 查询超过服务端 5s 超时 | 缩小查询范围或加索引（后续 change） |
 | CLI 报「未找到配置文件」 | 未创建配置或未设置 `LIUSHUI_CONFIG` | 见第 6 节 |

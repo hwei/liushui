@@ -14,6 +14,7 @@ import {
   ValidationError,
   checkReadOnlyStatement,
   computeId,
+  expandFtsMacros,
   shapeResult,
   validateAppendInput,
   wrapLimit,
@@ -242,7 +243,7 @@ async function handleSql(request: Request, env: Env, deps: HandlerDeps): Promise
     const statement = checkReadOnlyStatement(rawSql);
     const args = parseQueryArgs(record['args']);
     const limit = parseQueryLimit(record['limit']);
-    const wrapped = wrapLimit(statement, limit);
+    const wrapped = wrapLimit(expandFtsMacros(statement), limit);
 
     // 只读凭据在 /sql 路径解析；缺失时拒绝服务，绝不回退到写凭据。
     const readCreds = parseVaultReadCreds(env.LIUSHUI_VAULT_READ_CREDS);

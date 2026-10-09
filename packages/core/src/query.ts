@@ -44,7 +44,7 @@ export interface ShapeOptions {
  * 把引号与注释里的字符替换成空格（保留长度与换行），
  * 只留下“有效代码”的掩码，便于按分号切分语句与提取首关键字。
  */
-function maskNonCode(sql: string): string {
+export function maskNonCode(sql: string): string {
   const chars = sql.split('');
   const n = sql.length;
   let i = 0;

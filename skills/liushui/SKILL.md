@@ -52,8 +52,10 @@ SELECT id, ts, kind, content FROM memories ORDER BY ts DESC LIMIT 20;
 -- 按 kind
 SELECT id, ts, content FROM memories WHERE kind = 'maintenance_log' ORDER BY ts DESC LIMIT 20;
 
--- 全文关键词（尚无 FTS，用 LIKE 粗筛）
-SELECT id, ts, content FROM memories WHERE content LIKE '%iOS%渲染%' ORDER BY ts DESC LIMIT 20;
+-- 全文关键词（推荐用 fts()，见下面「全文检索」一节）
+SELECT m.id, m.ts, m.content
+FROM memories_fts JOIN memories m ON m.id = memories_fts.id
+WHERE memories_fts MATCH fts('iOS 渲染') ORDER BY rank LIMIT 20;
 
 -- 按作者
 SELECT id, ts, content FROM memories WHERE author = 'will' ORDER BY ts DESC LIMIT 20;
@@ -61,6 +63,45 @@ SELECT id, ts, content FROM memories WHERE author = 'will' ORDER BY ts DESC LIMI
 -- 查询计划（服务端不包裹 LIMIT，用于排查慢查询）
 EXPLAIN QUERY PLAN SELECT * FROM memories WHERE ts > '2026-01-01';
 ```
+
+## 全文检索
+
+`memories_fts(id, body)` 是 `memories.content` 的全文索引（派生数据，随追加同步更新）。检索时用 `fts('…')` 宏，agent 只写原文，不用关心分词：
+
+```sql
+SELECT m.id, m.ts, m.content
+FROM memories_fts JOIN memories m ON m.id = memories_fts.id
+WHERE memories_fts MATCH fts('渲染 问题')
+ORDER BY rank
+LIMIT 20;
+```
+
+宏的写法：
+
+- 空格分隔的词表示**同时出现**；独立的大写 `OR` 表示**任一出现**，且同时出现优先于 `OR`：`fts('打包 报错 OR 阴影')` 即“（打包 且 报错）或 阴影”。
+- 每个词按**连续出现**匹配：`fts('渲染问题')` 不会命中“渲染很慢，问题在别处”。
+- 中文按相邻两个字切分，所以**两个字及以上**的中文词都能检索；英文不区分大小写，按词匹配（`ios` 能命中 `iOS`，但 `OS` 不能命中 `iOS`）。
+- 宏只接受一个**字符串字面量**，不能写 `fts(?)` 或列名；文本里的引号、`*` 之类都当普通字符。
+- **单个汉字或假名**（如 `fts('渲')`、`fts('iOS的')`）会被拒绝并提示改用 `LIKE`：单字检索和任意子串匹配请用 `content LIKE '%字%'`。
+
+可以和其它条件自由组合：
+
+```sql
+SELECT m.id, m.ts, m.content
+FROM memories_fts JOIN memories m ON m.id = memories_fts.id
+WHERE memories_fts MATCH fts('打包 报错')
+  AND m.kind = 'note'
+  AND json_extract(m.meta, '$.git.branch') = 'main'
+ORDER BY rank
+LIMIT 20;
+```
+
+注意：
+
+- 展示内容和片段一律取 `memories.content`；**不要读 `body`，也不要用 `snippet()` / `highlight()`**（`body` 是切分后的文本，读起来不自然）。
+- 这是 bigram 匹配，偶尔会有误命中（两字片段跨词边界，如“作用”命中“合作用户”）；`ORDER BY rank` 会把更相关的排前面。
+- 搜不到时，先换词或拆词，再按反馈记忆规范写一条 `retrieval_feedback`。
+- 直接手写 `MATCH '渲染问题'`（不用宏）会因为没切分而静默返回空，不要这样写。
 
 ## 查询命令与输出
 
@@ -81,7 +122,7 @@ liushui sql --arg note "SELECT id FROM memories WHERE kind = ? ORDER BY ts"
 
 - **重名列会被改名**：服务端用 `SELECT * FROM (<你的 SQL>) LIMIT n+1` 包裹来限行数，重名列在子查询里会变成 `id:1`、`id:2`。需要稳定列名时自己起别名：`SELECT m.id AS mid, v.id AS vid …`。
 - **别用 `received_at` 排序**：时钟可能偏差，排序用 `ts`；`received_at` 只作旁证。
-- **尚无 FTS 与 `embed()`**：全文检索目前只能用 `LIKE`；语义检索（`embed('…')` 宏、向量索引）尚未实现，写 SQL 时不要假设它们可用。中文分词方案会另起 change 评估。
+- **尚无 `embed()`**：语义检索（`embed('…')` 宏、向量索引）尚未实现，写 SQL 时不要假设它们可用。全文检索用 `fts()`，见上一节。
 
 ## 安装
 

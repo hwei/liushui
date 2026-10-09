@@ -140,3 +140,27 @@ describe('按库路由与隔离（task 4.5）', () => {
     expect(await countMemories(ctx.vaults['personal']!.client)).toBe(1);
   });
 });
+
+describe('全文检索的两库隔离（memory-fts）', () => {
+  let ctx: TestContext;
+  beforeEach(async () => {
+    ctx = await createTestContext();
+  });
+  afterEach(async () => {
+    await ctx.cleanup();
+  });
+
+  it('个人库 token 的 fts() 检索只命中个人库的记录', async () => {
+    const personal = await makeAppendBody({ content: '个人库里的渲染记录' });
+    const work = await makeAppendBody({ content: '公司库里的渲染记录' });
+    await callAppend(ctx, personal, PERSONAL_TOKEN);
+    await callAppend(ctx, work, WORK_TOKEN);
+
+    const sql =
+      "SELECT m.content FROM memories_fts JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH fts('渲染')";
+    const p = await callSql(ctx, { sql }, PERSONAL_TOKEN);
+    expect(p.body.rows).toEqual([['个人库里的渲染记录']]);
+    const w = await callSql(ctx, { sql }, WORK_TOKEN);
+    expect(w.body.rows).toEqual([['公司库里的渲染记录']]);
+  });
+});

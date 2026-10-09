@@ -30,7 +30,7 @@ const SQDL_IMAGE = 'ghcr.io/tursodatabase/libsql-server:latest';
 
 const PERSONAL_TOKEN = 'it-personal-token';
 const WORK_TOKEN = 'it-work-token';
-const SERVICE_VERSION = '0.2.0-it';
+const SERVICE_VERSION = '0.3.0-it';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -176,7 +176,7 @@ test(
           return true;
         });
         const applied = await runMigrations(runtime.client, loadMigrations());
-        assert.deepEqual(applied, [1], `${runtime.name} 库应应用迁移 1`);
+        assert.deepEqual(applied, [1, 2], `${runtime.name} 库应应用迁移 1、2`);
       }
 
       // 2. wrangler dev（本地模式）指向这两个库。
@@ -332,6 +332,30 @@ test(
       const crossQuery = await sqlQuery(baseUrl, PERSONAL_TOKEN, { sql: 'SELECT 1', vault: 'work' });
       assert.equal(crossQuery.status, 403);
       assert.equal(crossQuery.body.error?.code, 'vault_mismatch');
+
+      // 全文检索：append 一条中文记忆，再用 fts() 经 Hrana 只读执行器查回（含两字词）。
+      const ftsCore = {
+        ts: '2026-10-08T08:00:00.000Z',
+        author: 'will',
+        kind: 'note',
+        content: '渲染管线切换到 URP 后阴影变糊',
+      };
+      const ftsId = await computeId(ftsCore);
+      const ftsAppend = await append(baseUrl, PERSONAL_TOKEN, { id: ftsId, ...ftsCore, meta: {} });
+      assert.equal(ftsAppend.status, 201, JSON.stringify(ftsAppend.body));
+      const ftsQuery = await sqlQuery(baseUrl, PERSONAL_TOKEN, {
+        sql: "SELECT m.id FROM memories_fts JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH fts('渲染') ORDER BY rank",
+      });
+      assert.equal(ftsQuery.status, 200, JSON.stringify(ftsQuery.body));
+      assert.deepEqual(ftsQuery.body.rows, [[ftsId]]);
+      assert.equal(typeof ftsQuery.body.stats?.rows_read, 'number');
+
+      // 单字检索被拒并提示 LIKE。
+      const ftsSingle = await sqlQuery(baseUrl, PERSONAL_TOKEN, {
+        sql: "SELECT id FROM memories_fts WHERE memories_fts MATCH fts('渲')",
+      });
+      assert.equal(ftsSingle.status, 400);
+      assert.match(String(ftsSingle.body.error?.message), /LIKE/);
 
       // 未授权的查询。
       const unauthorizedQuery = await sqlQuery(baseUrl, null, { sql: 'SELECT 1' });

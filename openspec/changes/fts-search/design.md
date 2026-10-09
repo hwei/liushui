@@ -12,7 +12,12 @@
   - bigram 预切分 + `unicode61`：“渲染”“渲染问题”“iOS渲染”“阴影 OR 数据库”“打包 报错”“缺条目”“IL2CPP”“link.xml” 都按预期命中；单字“渲”查不到。
   - `client.batch([INSERT memories … ON CONFLICT DO NOTHING, INSERT INTO memories_fts … SELECT ?, ? WHERE changes() = 1], 'write')` 重放时不会重复写索引。
   - 以 `memories_fts.id = memories.id` 关联时，查询计划为 `SCAN f VIRTUAL TABLE INDEX 32:M2` + `SEARCH m USING COVERING INDEX sqlite_autoindex_memories_1 (id=?)`；包裹 `SELECT * FROM (… ORDER BY rank) LIMIT n` 后顺序保持不变。
-  - **尚未在 Turso 上验证**：FTS5 是否可用、Hrana batch 里 `changes()` 的语义、只读 token 能否 `MATCH`、`rows_read` 的数值。由任务 1 实测。
+  - **Turso dev 库实测（2026-10-09，任务 1.1，用 `spike_` 前缀的临时表，已删除）**：
+    - FTS5 可用：`CREATE VIRTUAL TABLE … USING fts5(id UNINDEXED, body, tokenize='unicode61 remove_diacritics 2')` 成功，`MATCH … ORDER BY rank` 返回预期结果。
+    - `@libsql/client/web` 的 `batch([INSERT … ON CONFLICT DO NOTHING, INSERT … SELECT ?, ? WHERE changes() = 1], 'write')`：首次 `rowsAffected` 为 1，重放为 0，索引里该 `id` 仍只有 1 条；第二条语句失败（索引表不存在）时整个 batch 回滚，`memories` 一侧没有新增。
+    - 只读 token 经 Worker 的 Hrana 执行器（`BEGIN TRANSACTION READONLY` → 语句 → `ROLLBACK`）可以执行 `MATCH`；同一个只读执行器的写语句被拒绝。
+    - `rows_read`（304 行数据）：`MATCH`（经 `JOIN` 关联）为 **2**，同样结果的 `LIKE '%渲染%'` 为 **304**（全表扫描）。
+    - `client.transaction('write')` 交互式事务可用：提交的写入可见，回滚的写入不可见。
 
 ## Goals / Non-Goals
 
@@ -73,6 +78,8 @@ CREATE TABLE IF NOT EXISTS derived_state (
 
 ### 3. 追加：在同一个写事务里写记录和索引
 
+> 已在 Turso dev 库实测（见 Context）：`changes()` 在 Hrana batch 里语义与本地一致，下面的方案成立，不需要 `RETURNING` 备选。
+
 `appendMemory` 改为：
 
 ```ts
@@ -101,6 +108,8 @@ client.batch([
 - 这套“在代码区定位宏、解析字面量参数、替换”的机制，以后 `embed('…')` 可以直接复用。
 
 ### 5. 重建与一致性检查：`scripts/fts-rebuild.ts`
+
+> 已在 Turso dev 库实测（见 Context）：交互式写事务 `client.transaction('write')` 可用。
 
 - 用法：`TURSO_URL=… TURSO_AUTH_TOKEN=… npm run fts:rebuild [-- --check]`。凭据的处理与 `scripts/migrate.ts` 相同（只从环境变量读，绝不打印）。逻辑放在 core 的存储函数里（`rebuildFts(client)`、`checkFts(client)`），脚本只负责解析参数和输出，便于单测。
 - **重建**：在**一个交互式写事务**（`client.transaction('write')`）里执行 `DELETE FROM memories_fts`，然后按 `id` 分页（每页 500 条）读取 `memories` 并批量插入切分结果，最后 upsert `derived_state('memories_fts', FTS_SEGMENTER_V, now, rows)` 并提交。事务期间并发的 `/append` 会等待或失败重试，不会产生重复或遗漏。当前数据量下事务持续时间在秒级；10^5 条以上时再考虑分段方案（见 Open Questions）。
@@ -135,7 +144,7 @@ SKILL.md 新增「全文检索」一节：
 
 - [部署顺序错误：Worker 先于迁移上线，`/append` 在没有 `memories_fts` 的库上返回 503] → Migration Plan 规定“先迁移、再部署、后重建”；每个库迁移后用 `--check` 确认表存在。回滚 Worker 不需要回滚迁移（旧代码忽略新表）。
 - [迁移后、新 Worker 上线前写入的记录没有索引] → 部署后执行一次重建，再用 `--check` 确认缺失数为 0。
-- [Turso 不支持 FTS5，或 Hrana batch 中 `changes()` 的语义与本地不同] → 任务 1 先在 dev 上实测。如果 `changes()` 不可靠，改为在同一事务里先 `INSERT … RETURNING id`，再根据返回的行决定是否写索引（需要交互式事务），并把结论写回 Decision 3。
+- [Turso 不支持 FTS5，或 Hrana batch 中 `changes()` 的语义与本地不同] → 任务 1 已在 dev 上实测，结论成立（见 Context）。如果以后 `changes()` 的行为变化，改为在同一事务里先 `INSERT … RETURNING id`，再根据返回的行决定是否写索引（需要交互式事务），并把结论写回 Decision 3。
 - [bigram 召回过宽：两字片段跨越词边界，例如 “作用” 会命中 “合作用户”] → 这是 bigram 的固有代价；`bm25` 排序会把完整命中排在前面。真实使用里的误命中由反馈记忆收集，维护时决定是否换规则。
 - [索引大小和写入行数增加，每条记录多写一个 FTS 条目及其 shadow 表] → 按当前数据量远低于免费额度；任务 1 记录一次 `MATCH` 和一次 `LIKE` 的 `rows_read` 作为基线。
 - [agent 不用宏、直接手写 `MATCH '渲染问题'`，会因为切分对不上而静默返回空] → skill 只教宏的写法；无法从服务端阻止，因为直接 `MATCH` 仍然是合法的只读查询。
